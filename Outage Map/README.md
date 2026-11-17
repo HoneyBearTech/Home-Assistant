@@ -6,7 +6,9 @@ Open [the sample dashboard](docs/card-preview.html) in a browser to try the layo
 
 ## Install for beta testing
 
-1. In HACS, open **Custom repositories** and add `https://github.com/yanke7/Home-Assistant` as an **Integration**.
+[![Open Outage Map in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=yanke7&repository=Home-Assistant&category=integration)
+
+1. Click the button to open Outage Map in HACS on your Home Assistant instance. If the button cannot reach your instance, open **Custom repositories** in HACS and add `https://github.com/yanke7/Home-Assistant` as an **Integration**.
 2. Download **Outage Map**, then restart Home Assistant.
 3. Open **Settings → Devices & services → Add integration → Outage Map**.
 4. Create a dashboard, open it in edit mode, and add the **Outage Map** card. A panel view gives its service grid the full width. Refresh the browser after setting up the integration so it can load the bundled card.

@@ -4,6 +4,8 @@ Custom dashboard cards and integrations for Home Assistant.
 
 **Outage Map beta:** add this repository to HACS as an **Integration**. [Installation and tester guide](Outage%20Map/README.md).
 
+[![Open Outage Map in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=yanke7&repository=Home-Assistant&category=integration)
+
 | Folder | What it is |
 |--------|------------|
 | [Main Dashboard card](Main%20Dashboard%20card) | Yanke Pulse: a living hero card with sky, moon phase, clock and home status |
