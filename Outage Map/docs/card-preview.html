@@ -7,6 +7,8 @@
   body{margin:0;background:#101822;color:#f4f7fb;font:15px/1.35 system-ui;display:grid;grid-template-columns:190px 1fr;min-height:100vh}
   nav{background:#141f2b;border-right:1px solid #263447;padding:22px 14px;display:flex;flex-direction:column;gap:20px}
   nav strong{color:#34ddec} nav small{color:#acbbcd} main{padding:20px;min-width:0} ha-icon{display:inline-grid;place-items:center;width:22px;height:22px}
+  /* Sample native Home Assistant palette for Follow Appearance. */
+  outage-watch-card{--primary-background-color:#191321;--ha-card-background:#291f35;--secondary-background-color:#3a2e49;--primary-text-color:#f8f0ff;--secondary-text-color:#d3bddf;--primary-color:#d9adff;--text-primary-color:#311443;--divider-color:#766685;--success-color:#a6e4b8;--warning-color:#ffd091;--error-color:#ffb5bd}
   @media(max-width:900px){body{display:block}nav{display:none}main{padding:10px}}
 </style>
 <nav aria-label="Preview navigation"><b>⌂ Home Assistant</b><span>Overview</span><span>Energy</span><span>History</span><strong>Outage Map</strong><small>DESIGN PREVIEW · SAMPLE DATA</small></nav>
@@ -18,7 +20,10 @@
     ["github","GitHub",482,"source-branch"],["cloudflare","Cloudflare",289,"cloud-outline"],
     ["apple","Apple iCloud",118,"cloud-outline"],["google","Google",124,"magnify"],
     ["netflix","Netflix",96,"play-box-outline"],["spotify","Spotify",107,"music-note"],
-    ["ewelink","eWeLink",85,"home-outline"],["yankedigital","example.com",112,"link-variant"],
+    ["ewelink","eWeLink",85,"home-outline"],["example","example.com",112,"link-variant"],
+    ["cloud","Home Assistant Cloud",103,"cloud-outline"],["anthropic","Anthropic",172,"magnify"],
+    ["weather","Environment Canada Weather",143,"cloud-outline"],["met","MET Norway API",158,"cloud-outline"],
+    ["radio","Radio Browser",192,"music-note"],["translate","Google Translate",136,"magnify"],
   ].map(([id,name,latency,icon], index) => ({
     id,name,latency,icon, baseline:index < 2 ? 112 : latency, checked:now-60,
     status:index === 0 ? "outage" : index === 1 ? "possible_problems" : "operational",
@@ -38,8 +43,20 @@
   const card = document.querySelector("outage-watch-card");
   card.selected = "github";
   card.setConfig({});
+  const speedStates = {
+    "sensor.speedtest_download": {state:"241.4", last_updated:new Date(now * 1000).toISOString()},
+    "sensor.speedtest_upload": {state:"31.8", last_updated:new Date(now * 1000).toISOString()},
+    "sensor.speedtest_ping": {state:"29", last_updated:new Date(now * 1000).toISOString()},
+  };
+  const speedHistory = Object.fromEntries(Object.keys(speedStates).slice(0, 2).map((id, index) => [
+    id, Array.from({length:24}, (_, i) => ({
+      lu:now - (24 - i) * 3600, s:String(index === 0 ? 190 + i * 2 + 22 * Math.sin(i) : 28 + 4 * Math.sin(i * 1.7)),
+    })),
+  ]));
   card.hass = {
-    callWS: async () => ({services, catalog, connected:true, can_manage:true, notify_configured:true}),
+    states:speedStates,
+    callWS: async ({type}) => type === "history/history_during_period" ? speedHistory :
+      {services, catalog, connected:true, can_manage:true, notify_configured:true},
     callService: async (_, action, data) => {
       const index = services.findIndex((item) => item.id === data.service_id);
       if (action === "set_alerts") services[index].alerts = data.enabled;

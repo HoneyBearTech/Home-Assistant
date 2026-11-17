@@ -22,6 +22,22 @@ For manual installation, copy `custom_components/outage_watch` from the reposito
 
 If you already use Outage Watch, the integration domain and card type are unchanged. Keep your existing config entry to retain settings, service IDs, and history. Back up your configuration before replacing the manually installed component with HACS files.
 
+## Theme screenshots
+
+All six screenshots use the same fictional service and Speedtest data. **Follow Appearance** is shown with an Amethyst palette and will look different with your active Home Assistant theme.
+
+| Brushed Steel | Amber Relay |
+| --- | --- |
+| [![Brushed Steel](docs/screenshots/brushed-steel.jpg)](docs/screenshots/brushed-steel.jpg) | [![Amber Relay](docs/screenshots/amber-relay.jpg)](docs/screenshots/amber-relay.jpg) |
+
+| Neon Grid | Midnight Drift |
+| --- | --- |
+| [![Neon Grid](docs/screenshots/neon-grid.jpg)](docs/screenshots/neon-grid.jpg) | [![Midnight Drift](docs/screenshots/midnight-drift.jpg)](docs/screenshots/midnight-drift.jpg) |
+
+| Aqua Current | Follow Appearance |
+| --- | --- |
+| [![Aqua Current](docs/screenshots/aqua-current.jpg)](docs/screenshots/aqua-current.jpg) | [![Follow Appearance shown with an Amethyst palette](docs/screenshots/follow-appearance.jpg)](docs/screenshots/follow-appearance.jpg) |
+
 ## What the dashboard reports
 
 - **Feed + checks** combines a provider's public status feed and endpoint reachability. **Feed only** uses the provider's feed. **Checks only** tests a particular URL, so a successful request can miss an incident elsewhere in the service.
