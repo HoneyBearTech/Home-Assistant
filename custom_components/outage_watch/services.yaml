@@ -1,0 +1,30 @@
+add_service:
+  name: Track a service
+  fields:
+    catalog_id:
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    url:
+      selector:
+        text:
+remove_service:
+  name: Stop tracking a service
+  fields:
+    service_id:
+      required: true
+      selector:
+        text:
+set_alerts:
+  name: Set service alerts
+  fields:
+    service_id:
+      required: true
+      selector:
+        text:
+    enabled:
+      required: true
+      selector:
+        boolean:

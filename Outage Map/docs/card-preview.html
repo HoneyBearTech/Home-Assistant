@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outage Map · Sample dashboard</title>
+<style>
+  body{margin:0;background:#101822;color:#f4f7fb;font:15px/1.35 system-ui;display:grid;grid-template-columns:190px 1fr;min-height:100vh}
+  nav{background:#141f2b;border-right:1px solid #263447;padding:22px 14px;display:flex;flex-direction:column;gap:20px}
+  nav strong{color:#34ddec} nav small{color:#acbbcd} main{padding:20px;min-width:0} ha-icon{display:inline-grid;place-items:center;width:22px;height:22px}
+  @media(max-width:900px){body{display:block}nav{display:none}main{padding:10px}}
+</style>
+<nav aria-label="Preview navigation"><b>⌂ Home Assistant</b><span>Overview</span><span>Energy</span><span>History</span><strong>Outage Map</strong><small>DESIGN PREVIEW · SAMPLE DATA</small></nav>
+<main><outage-watch-card></outage-watch-card></main>
+<script src="../../custom_components/outage_watch/www/outage-watch-card.js"></script>
+<script>
+  const now = Date.now() / 1000;
+  const services = [
+    ["github","GitHub",482,"source-branch"],["cloudflare","Cloudflare",289,"cloud-outline"],
+    ["apple","Apple iCloud",118,"cloud-outline"],["google","Google",124,"magnify"],
+    ["netflix","Netflix",96,"play-box-outline"],["spotify","Spotify",107,"music-note"],
+    ["ewelink","eWeLink",85,"home-outline"],["yankedigital","example.com",112,"link-variant"],
+  ].map(([id,name,latency,icon], index) => ({
+    id,name,latency,icon, baseline:index < 2 ? 112 : latency, checked:now-60,
+    status:index === 0 ? "outage" : index === 1 ? "possible_problems" : "operational",
+    reason:index === 0 ? "provider_outage" : index === 1 ? "slow" : "ok",
+    signal:index < 4 ? "Feed + checks" : "Checks only", feed_fresh:index < 4, feed_checked:index < 4 ? now-120 : null,
+    history:Array.from({length:96}, (_, i) => [now-86400+i*900,"ok",Math.max(30,(index === 0 && i > 77 ? 402 : index < 2 ? 112 : latency)+Math.sin(i*1.7)*15+Math.cos(i*.9)*8+(index === 1 && i % 26 === 18 ? 98 : 0))]),
+    ...(index === 0 ? {incident:"Git operations degraded. Some users may experience errors.",components:["Git Operations","API Requests"],official:"https://www.githubstatus.com/",crowd:"https://downdetector.com/status/github/"} : {}),
+  }));
+  const catalog = [{id:"docker",name:"Docker Hub"},{id:"tailscale",name:"Tailscale"}];
+  customElements.define("ha-icon", class extends HTMLElement {
+    connectedCallback() {
+      const name = this.getAttribute("icon").slice(4);
+      this.textContent = ({"source-branch":"⑂","cloud-outline":"☁","magnify":"⌕","play-box-outline":"▷","music-note":"♫","home-outline":"⌂","link-variant":"↗"})[name] || "◇";
+      this.setAttribute("aria-hidden", "true");
+    }
+  });
+  const card = document.querySelector("outage-watch-card");
+  card.selected = "github";
+  card.setConfig({});
+  card.hass = {
+    callWS: async () => ({services, catalog, connected:true, can_manage:true, notify_configured:true}),
+    callService: async (_, action, data) => {
+      const index = services.findIndex((item) => item.id === data.service_id);
+      if (action === "set_alerts") services[index].alerts = data.enabled;
+      if (action === "remove_service") services.splice(index, 1);
+      if (action === "add_service") {
+        const item = catalog.find((entry) => entry.id === data.catalog_id);
+        services.push({id:item?.id || crypto.randomUUID(), name:item?.name || data.name,status:"unknown",signal:"Checks only", history:[]});
+      }
+    },
+  };
+</script>
+</html>

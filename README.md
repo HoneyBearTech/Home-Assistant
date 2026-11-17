@@ -1,6 +1,8 @@
 # Home Assistant
 
-Custom dashboard cards for my Home Assistant setup.
+Custom dashboard cards and integrations for Home Assistant.
+
+**Outage Map beta:** add this repository to HACS as an **Integration**. [Installation and tester guide](Outage%20Map/README.md).
 
 | Folder | What it is |
 |--------|------------|
@@ -10,3 +12,4 @@ Custom dashboard cards for my Home Assistant setup.
 | [Network](Network) | Responsive network console with speed history, device status and printer supplies |
 | [Themes](Themes) | Shared appearance settings: ten palettes, five fonts, and global text sizing |
 | [Echo Show Remote](Echo%20Show%20Remote) | Alexa skill that puts a touch remote for the Office Apple TV on an Echo Show, opened automatically when the Apple TV turns on |
+| [Outage Map](Outage%20Map) | Provider status feeds, endpoint checks, and a live dashboard for Home Assistant |

@@ -1,0 +1,18 @@
+{
+  "domain": "outage_watch",
+  "name": "Outage Map",
+  "codeowners": [
+    "@yanke7"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http"
+  ],
+  "documentation": "https://github.com/yanke7/Home-Assistant/tree/main/Outage%20Map",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yanke7/Home-Assistant/issues",
+  "requirements": [],
+  "version": "0.2.0"
+}

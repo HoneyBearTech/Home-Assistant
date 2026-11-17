@@ -1,0 +1,16 @@
+[
+  {"id":"github","name":"GitHub","url":"https://github.com/","feed":"https://www.githubstatus.com/api/v2/summary.json","official":"https://www.githubstatus.com/","crowd":"https://downdetector.com/status/github/","icon":"source-branch"},
+  {"id":"cloudflare","name":"Cloudflare","feed":"https://www.cloudflarestatus.com/api/v2/summary.json","official":"https://www.cloudflarestatus.com/","crowd":"https://downdetector.com/status/cloudflare/","icon":"cloud-outline"},
+  {"id":"google","name":"Google","url":"https://www.google.com/","crowd":"https://downdetector.com/status/google/","icon":"magnify","feed":"https://www.google.com/appsstatus/dashboard/incidents.json","official":"https://www.google.com/appsstatus/dashboard/","feed_scope":"Google Workspace"},
+  {"id":"netflix","name":"Netflix","url":"https://www.netflix.com/","crowd":"https://downdetector.com/status/netflix/","icon":"play-box-outline"},
+  {"id":"spotify","name":"Spotify","url":"https://open.spotify.com/","crowd":"https://downdetector.com/status/spotify/","icon":"music-note","official":"https://support.spotify.com/article/ongoing-issues/"},
+  {"id":"icloud","name":"Apple iCloud","url":"https://www.icloud.com/","feed":"https://www.apple.com/support/systemstatus/data/system_status_en_US.js","official":"https://www.apple.com/support/systemstatus/","feed_scope":"iCloud services","icon":"cloud-outline"},
+  {"id":"ewelink","name":"eWeLink","url":"https://web.ewelink.cc/","icon":"home-outline"},
+  {"id":"nabu_casa","name":"Home Assistant Cloud","feed":"https://status.nabucasa.com/api/v2/summary.json","official":"https://status.nabucasa.com/","icon":"cloud-outline"},
+  {"id":"anthropic","name":"Anthropic","feed":"https://status.claude.com/api/v2/summary.json","official":"https://status.claude.com/","icon":"creation"},
+  {"id":"met_no","name":"MET Norway API","url":"https://api.met.no/","icon":"weather-partly-cloudy"},
+  {"id":"environment_canada","name":"Environment Canada Weather","url":"https://weather.gc.ca/","icon":"weather-cloudy"},
+  {"id":"radio_browser","name":"Radio Browser","url":"https://www.radio-browser.info/","icon":"radio"},
+  {"id":"ookla","name":"Ookla Speedtest","url":"https://www.speedtest.net/","icon":"speedometer"},
+  {"id":"google_translate","name":"Google Translate","url":"https://translate.google.com/","icon":"translate"}
+]
