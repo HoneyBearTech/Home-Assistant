@@ -45,5 +45,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          ignore: brands
+          # The beta is URL-only. Its MIT license is scoped to Outage Map.
+          ignore: brands license
           comment: 'false'
