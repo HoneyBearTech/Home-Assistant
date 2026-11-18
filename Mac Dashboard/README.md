@@ -40,6 +40,8 @@ cp mac2mqtt.example.yaml mac2mqtt.yaml
 chmod 600 mac2mqtt.yaml
 ```
 
+Existing brokers keep using plain TCP unless you set `mqtt_tls: true`. To migrate, enable the broker’s TLS listener, set `mqtt_port` to its port (often 8883), and set `mqtt_ip` to a hostname or IP address listed on its certificate. The bridge verifies that name and trusts the system certificate authorities. For a private authority, set `mqtt_ca_file` to its PEM certificate file. This replaces the system trust list for the broker connection. A failed certificate check prevents the connection.
+
 Fill in the broker settings locally. The service reads `mac2mqtt.yaml` from its working directory. Keep `office-mirroring` beside the `mac2mqtt` executable. For background use, package/sign these executables in an app and configure a user LaunchAgent with that working directory and KeepAlive. Grant the app Local Network and Accessibility permissions when macOS requests them. Rebuilding an ad-hoc-signed app can require removing and re-adding its Accessibility entry.
 
 The MQTT topic prefix is derived from the Mac hostname at runtime. Update `Example-MacBook` and the example identifiers in `discovery.example.json` to match your installation, then publish each payload as JSON to its listed discovery topic with retain enabled. Do not retain command messages. Entity IDs assigned by Home Assistant must match the dashboard mapping.
@@ -58,7 +60,7 @@ An exact phrase such as “Alexa, netflix tv” requires an Alexa routine: Voice
 - Staying awake on AC power is a separate macOS setting, not changed by this dashboard.
 - AirPlay and camera actions require an awake, logged-in Mac and an available Apple TV.
 - Connection status cannot distinguish sleep, shutdown and network failure. Display animation reflects commands, not a hardware display-power sensor.
-- If every Mac control is unavailable, check the MQTT service and broker connection. Restarting the service restored a stale offline state observed after a broker timeout; this source does not claim to permanently fix that reconnect edge case.
+- If every Mac control is unavailable, check the MQTT service and broker connection. The bridge marks itself online after the broker accepts its command subscription. It retries rejected subscriptions every 15 seconds. If the broker keeps the connection open without acknowledging readiness within 15 seconds, the bridge closes that connection and reconnects. Check the broker permissions for the command subscription and the retained status topic.
 - Some Apple TV apps report stale active-app metadata even when launch succeeds. Confirm on the TV when needed.
 
 ## Validation
