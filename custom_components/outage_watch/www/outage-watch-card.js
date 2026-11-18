@@ -74,17 +74,19 @@ function speedGraph(history, series, {days = 1, style = "classic", end = Date.no
   if (!values.length) return '<span class="speed-empty">No recorded history</span>';
   const maximum = Math.max(1, ...values);
   function marks(points) {
-    let path = "", dot = "", previous = null;
+    let path = "", dot = "", previous = null, area = "", segment = "", firstX, lastX;
+    const closeArea = () => segment ? segment + `L${lastX},24 H${firstX} Z ` : "";
     for (const [time, value] of points) {
-      if (value === null) { previous = null; continue; }
+      if (value === null) { area += closeArea(); segment = ""; previous = null; continue; }
       const x = (2 + 92 * Math.max(0, Math.min(1, (time - start) / span))).toFixed(1);
       const y = (22 - 19 * value / maximum).toFixed(1);
-      path += previous === null ? `M${x},${y} ` :
-        style === "wave" ? `L${x},${y} ` : `H${x} V${y} `;
+      const step = previous === null ? `M${x},${y} ` :
+        style === "wave" ? `C${(+lastX + +x)/2},${previous} ${(+lastX + +x)/2},${y} ${x},${y} ` : `H${x} V${y} `;
       dot = `<circle cx="${x}" cy="${y}" r="1.6"/>`;
-      previous = value;
+      if (previous === null) firstX = x;
+      path += step; segment += step; lastX = x; previous = y;
     }
-    return `<path d="${path}"/>${dot}`;
+    return `${style === "wave" ? `<path class="wave-fill" d="${area + closeArea()}"/>` : ""}<path d="${path}"/>${dot}`;
   }
   return `<svg class="speed-chart" viewBox="0 0 96 24" role="img" aria-label="Recorded ${ping ? "ping" : "download and upload speeds"} over the last ${SPEED_RANGES[days]}">
     <path class="speed-grid" d="M2 12h92 M2 22h92 M25 2v20 M48 2v20 M71 2v20"/>
@@ -337,6 +339,18 @@ class OutageWatchCard extends HTMLElement {
         const value = reading === null ? "—" : reading.toLocaleString(undefined, {maximumFractionDigits:1});
         const scale = key === "download" ? 1000 : key === "upload" ? 500 : 100;
         const progress = Math.round(100 * Math.min(1, Math.max(0, (reading ?? 0) / scale)));
+        if (this.speedStyle !== "classic") {
+          const unitText = escape(sensor.attributes?.unit_of_measurement || unit);
+          const display = reading === null ? "—" : Math.abs(reading) >= 10000
+            ? new Intl.NumberFormat(undefined, {notation:"compact", maximumFractionDigits:1}).format(reading) : value;
+          const gauge = this.speedStyle === "gauges";
+          const arc = "M13 57 A32 32 0 1 1 67 57";
+          return `<span class="instrument ${key}" style="--level:${progress}%" title="${label}: ${escape(value)} ${unitText} · scale 0–${scale}">
+            ${gauge ? `<svg viewBox="0 0 80 64" aria-hidden="true"><path d="${arc}"/><path class="lit" d="${arc}" pathLength="100" stroke-dasharray="${progress} 101"/></svg>` : ""}
+            ${this.speedStyle === "rails" ? '<i class="rail"></i>' : ""}
+            <span class="reading">${gauge ? "" : arrow} ${escape(display)}</span><small>${unitText}</small>
+            ${gauge ? `<strong>${label}</strong>` : ""}</span>`;
+        }
         return `<span class="speed-metric ${key}" style="--speed-progress:${progress}%" title="${label} · scale 0–${scale} ${unit}">
           <b>${arrow} ${escape(value)}</b> ${escape(sensor.attributes?.unit_of_measurement || unit)}
         </span>`;
@@ -521,6 +535,10 @@ class OutageWatchCard extends HTMLElement {
       *, *::before, *::after {box-sizing:border-box}
       [hidden] {display:none!important}
       .shell {
+        --speed-down:var(--accent,var(--blue));
+        --speed-up:var(--trace-color,var(--violet));
+        --speed-base:var(--theme-surface,#24272c);
+        --speed-track:color-mix(in srgb,var(--line) 55%,var(--speed-base));
         container-type:inline-size;
         color:var(--ink);
         padding:clamp(16px,3vw,38px);
@@ -596,7 +614,7 @@ class OutageWatchCard extends HTMLElement {
       .speed-chart {width:96px;height:24px;display:block}
       .speed-chart path {fill:none;stroke:currentColor;stroke-width:1.35}
       .speed-chart circle {fill:currentColor}
-      .speed-chart .speed-grid {stroke:#505967;stroke-width:.5}
+      .speed-chart .speed-grid {stroke:var(--speed-track);stroke-width:.5}
       .speed-caption,.speed-empty {font-size:9px;color:var(--muted)}
       .speed-values {display:flex;flex-wrap:wrap;gap:4px 8px;font-size:11px;font-variant-numeric:tabular-nums}
       .speed-values span {white-space:nowrap}
@@ -608,28 +626,6 @@ class OutageWatchCard extends HTMLElement {
         border:0;box-shadow:none;padding:1px 2px;text-align:left;min-width:0;
       }
       .speed-view:hover .speed-caption {text-decoration:underline}
-      .speed-panel[data-speed-style="matrix"] .speed-chart {
-        background:radial-gradient(circle,#70edf961 0 1px,transparent 1.2px) 0 0/5px 4px;
-        filter:drop-shadow(0 0 3px #75f8de);
-      }
-      .speed-panel[data-speed-style="gauges"] .speed-metric {
-        min-width:45px;min-height:43px;display:grid;place-content:center;text-align:center;
-        padding:4px;color:#d3fbff;border:1px solid #8defff55;border-radius:50%;
-        background:radial-gradient(circle,#12262e 57%,transparent 59%),
-                   conic-gradient(#77edde var(--speed-progress),#203945 0);
-      }
-      .speed-panel[data-speed-style="rails"] .speed-metric {
-        display:block;min-width:48px;padding:2px 4px 4px;position:relative;
-        border-bottom:1px solid #68d9e280;
-      }
-      .speed-panel[data-speed-style="rails"] .speed-metric::after {
-        content:"";width:var(--speed-progress);height:3px;background:currentColor;
-        border-radius:4px;position:absolute;bottom:0;left:0;box-shadow:0 0 5px currentColor;
-      }
-      .speed-panel[data-speed-style="wave"] .speed-chart {
-        background:linear-gradient(180deg,#1d5663aa,#09232c);
-        filter:drop-shadow(0 0 3px #62e6f280);
-      }
       .speed-action {display:grid;justify-items:center;gap:2px;min-width:66px}
       .speed-action button {font-size:11px;line-height:1.15;padding:5px 7px;white-space:nowrap}
       .speed-message {font-size:9px;line-height:1.1;color:var(--muted);max-width:76px;text-align:center}
@@ -873,6 +869,7 @@ class OutageWatchCard extends HTMLElement {
         --theme-raised:var(--yanke-raised,var(--secondary-background-color,#343d49));
         --ink:var(--yanke-text,var(--primary-text-color,#f0f2f7));
         --muted:var(--yanke-muted,var(--secondary-text-color,#b6c5db));
+        --speed-up:var(--accent-color,var(--good));
         --accent:var(--yanke-accent,var(--primary-color,#65d4ee));
         --on-accent:var(--yanke-on-accent,var(--text-primary-color,#10191c));
         --line:var(--yanke-line,var(--divider-color,#758294));
@@ -909,6 +906,41 @@ class OutageWatchCard extends HTMLElement {
         .shell[data-mobile-layout="double"] .spark {gap:4px;min-height:22px}
         .shell[data-mobile-layout="double"] .spark strong {font-size:11px}
       }
+      .speed-chart path.wave-fill {fill:currentColor;opacity:.12;stroke:none}
+      .shell .speed-panel[data-speed-style]:not([data-speed-style="classic"]) {
+        box-sizing:border-box;max-width:100%;padding:6px 10px;gap:10px;flex-wrap:wrap;
+        background:linear-gradient(150deg,color-mix(in srgb,var(--speed-down) 12%,var(--speed-base)),var(--speed-base));border:1px solid var(--line);
+        border-radius:14px;box-shadow:inset 0 0 0 3px var(--speed-base);
+      }
+      .speed-panel:not([data-speed-style="classic"]) .speed-values {display:grid;gap:2px}
+      .instrument {--light:var(--speed-down);color:var(--ink);display:flex;align-items:baseline;gap:4px;line-height:1.12}
+      .instrument.upload {--light:var(--speed-up);color:var(--ink)}
+      .instrument.ping {--light:var(--good);color:var(--ink)}
+      .reading {font-size:15px;font-weight:700;color:var(--light);font-variant-numeric:tabular-nums}
+      .instrument small {font-size:10px;color:var(--muted)}
+      .speed-panel:not([data-speed-style="classic"]) .speed-trend {width:clamp(92px,12vw,175px)}
+      .speed-panel:not([data-speed-style="classic"]) .speed-chart {width:100%;height:auto;color:var(--speed-down)}
+      .shell[data-theme] :is(.speed-chart,.speed-values,.speed-dialog) .download {color:var(--speed-down)}
+      .shell[data-theme] :is(.speed-chart,.speed-values,.speed-dialog) .upload {color:var(--speed-up)}
+      .speed-panel:not([data-speed-style="classic"]) .speed-caption {color:var(--muted)}
+      .speed-panel[data-speed-style="matrix"] .speed-chart {background:radial-gradient(ellipse,var(--speed-track) 1px,transparent 1.5px) 0 0/4px 3px}
+      .speed-panel[data-speed-style="matrix"] .speed-chart g path {stroke-dasharray:1.2 .5;stroke-width:2}
+      .speed-panel[data-speed-style="gauges"] .speed-values {display:flex;gap:4px;flex-wrap:wrap}
+      .speed-panel[data-speed-style="gauges"] .instrument {
+        width:clamp(62px,5vw,82px);aspect-ratio:80/74;position:relative;display:flex;
+        flex-direction:column;align-items:center;justify-content:flex-end;gap:1px;
+      }
+      .instrument svg {width:100%;position:absolute;inset:0 0 auto;fill:none;stroke:var(--speed-track);stroke-width:5;stroke-linecap:round}
+      .instrument svg .lit {stroke:var(--light);filter:drop-shadow(0 0 2px var(--light))}
+      .instrument svg ~ .reading {position:relative;line-height:1.1;font-size:14px}
+      .instrument strong {margin-top:5px;color:var(--light);font-size:9px;text-transform:uppercase}
+      .rail {width:clamp(90px,12vw,175px);height:7px;margin-right:6px;align-self:center;border:1px solid var(--line);border-radius:8px;background:var(--speed-base);overflow:hidden}
+      .rail::before {content:"";display:block;width:var(--level);height:100%;background:linear-gradient(90deg,color-mix(in srgb,var(--light) 48%,var(--speed-base)),var(--light));border-radius:inherit}
+      .shell .speed-panel:not([data-speed-style="classic"]) .speed-action button {
+        color:var(--ink);border:1px solid var(--speed-down);border-radius:20px;padding:7px 10px;
+        background:var(--speed-base);box-shadow:0 0 6px color-mix(in srgb,var(--speed-down) 30%,transparent);
+      }
+      .speed-message:empty {display:none}
     </style><main class="shell" data-theme="${this.theme}" data-mobile-layout="${this.mobileLayout}">
       <dialog class="theme-dialog" aria-labelledby="ow-theme-title">
         <div class="row"><h2 id="ow-theme-title">Dashboard theme</h2><button type="button" data-action="close-themes" aria-label="Close theme picker">×</button></div>
