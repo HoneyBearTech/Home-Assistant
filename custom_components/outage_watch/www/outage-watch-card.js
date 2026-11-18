@@ -44,37 +44,49 @@ const SPEED_SENSORS = [
   {key:"ping", label:"Ping", arrow:"↔", unit:"ms"},
 ];
 const SPEED_WINDOW = 24 * 60 * 60 * 1000;
+const SPEED_STYLES = {
+  classic: "Classic",
+  matrix: "Signal Matrix",
+  gauges: "Neon Gauges",
+  rails: "Flux Rails",
+  wave: "Aqua Wave",
+};
+const SPEED_STYLE_KEY = "outage-watch.speed-style";
+const SPEED_RANGES = {1:"24 hours", 7:"7 days", 30:"30 days"};
+
+function recordedSpeed(row) {
+  return [typeof row.lu === "number" ? row.lu * 1000 : Date.parse(row.last_updated || row.last_changed),
+    numeric(row.s ?? row.state)];
+}
 
 function numeric(value) {
   return value != null && String(value).trim() !== "" && Number.isFinite(Number(value))
     ? Number(value) : null;
 }
 
-function speedGraph(history, series) {
-  const end = Date.now(), start = end - SPEED_WINDOW;
-  const lines = series.filter(({key}) => key !== "ping").map(({key, id}) => ({
+function speedGraph(history, series, {days = 1, style = "classic", end = Date.now(), ping = false} = {}) {
+  const span = days * SPEED_WINDOW, start = end - span;
+  const lines = series.filter(({key}) => ping ? key === "ping" : key !== "ping").map(({key, id}) => ({
     key,
-    points: (history[id] || []).map((row) => [
-      typeof row.lu === "number" ? row.lu * 1000 : Date.parse(row.last_updated || row.last_changed),
-      numeric(row.s ?? row.state),
-    ]).filter(([time]) => Number.isFinite(time)),
+    points: (history[id] || []).map(recordedSpeed).filter(([time]) => Number.isFinite(time)),
   }));
   const values = lines.flatMap(({points}) => points.map(([,value]) => value).filter((v) => v !== null));
-  if (!values.length) return '<span class="speed-empty">No 24h history</span>';
+  if (!values.length) return '<span class="speed-empty">No recorded history</span>';
   const maximum = Math.max(1, ...values);
   function marks(points) {
     let path = "", dot = "", previous = null;
     for (const [time, value] of points) {
       if (value === null) { previous = null; continue; }
-      const x = (2 + 92 * Math.max(0, Math.min(1, (time - start) / SPEED_WINDOW))).toFixed(1);
+      const x = (2 + 92 * Math.max(0, Math.min(1, (time - start) / span))).toFixed(1);
       const y = (22 - 19 * value / maximum).toFixed(1);
-      path += previous === null ? `M${x},${y} ` : `H${x} V${y} `;
+      path += previous === null ? `M${x},${y} ` :
+        style === "wave" ? `L${x},${y} ` : `H${x} V${y} `;
       dot = `<circle cx="${x}" cy="${y}" r="1.6"/>`;
       previous = value;
     }
     return `<path d="${path}"/>${dot}`;
   }
-  return `<svg class="speed-chart" viewBox="0 0 96 24" role="img" aria-label="Download and upload speeds over the last 24 hours">
+  return `<svg class="speed-chart" viewBox="0 0 96 24" role="img" aria-label="Recorded ${ping ? "ping" : "download and upload speeds"} over the last ${SPEED_RANGES[days]}">
     <path class="speed-grid" d="M2 12h92 M2 22h92 M25 2v20 M48 2v20 M71 2v20"/>
     ${lines.map(({key,points}) => `<g class="${key}">${marks(points)}</g>`).join("")}
   </svg>`;
@@ -109,12 +121,29 @@ class OutageWatchCard extends HTMLElement {
     this.theme = "steel";
     this.mobileLayout = "single";
     this.showServerInfo = false;
+    this.speedStyle = "classic";
+    this.speedDays = 1;
+    this.speedPage = 0;
     try {
       const saved = localStorage.getItem(THEME_KEY);
       if (validTheme(saved)) this.theme = saved;
       if (localStorage.getItem(MOBILE_LAYOUT_KEY) === "double") this.mobileLayout = "double";
       this.showServerInfo = localStorage.getItem(SERVER_INFO_KEY) === "true";
+      const speedStyle = localStorage.getItem(SPEED_STYLE_KEY);
+      if (Object.hasOwn(SPEED_STYLES, speedStyle)) this.speedStyle = speedStyle;
     } catch { /* Theme selection still works without storage. */ }
+    this.shadowRoot.addEventListener("close", (event) => {
+      if (!this.isConnected) return;
+      if (event.target.classList.contains("theme-dialog") && this.speedStyleChanged) {
+        this.speedStyleChanged = false;
+        this.render();
+        this.shadowRoot.querySelector('[data-action="themes"]')?.focus();
+      }
+      if (event.target.classList.contains("speed-dialog")) {
+        this.render();
+        this.shadowRoot.querySelector('[data-action="speed-history"]')?.focus();
+      }
+    }, true);
     this.shadowRoot.addEventListener("change", (event) => {
       if (event.target.id === "catalog-category") this.filterCatalog();
     });
@@ -156,7 +185,7 @@ class OutageWatchCard extends HTMLElement {
     if (!validTheme(theme)) return;
     this.theme = theme;
     try { localStorage.setItem(THEME_KEY, theme); } catch { /* Keep the in-memory choice. */ }
-    this.shadowRoot.querySelector("dialog")?.close();
+    this.shadowRoot.querySelector(".theme-dialog")?.close();
     this.syncAppearance();
     this.render();
     this.shadowRoot.querySelector('[data-action="themes"]')?.focus();
@@ -166,6 +195,73 @@ class OutageWatchCard extends HTMLElement {
     return SPEED_SENSORS.map((sensor) => ({
       ...sensor, id: this.config?.[`speedtest_${sensor.key}_entity`] || `sensor.speedtest_${sensor.key}`,
     })).filter(({id}) => this._hass?.states?.[id]);
+  }
+
+  fetchSpeedReadings(ids, days, end, includeStart = false) {
+    return this._hass.callWS({
+      type:"history/history_during_period", entity_ids:ids,
+      start_time:new Date(end - days * SPEED_WINDOW).toISOString(), end_time:new Date(end).toISOString(),
+      include_start_time_state:includeStart, minimal_response:true, no_attributes:true,
+    });
+  }
+
+  async openSpeedHistory(days = this.speedDays) {
+    const dialog = this.shadowRoot.querySelector(".speed-dialog");
+    if (!dialog.open) dialog.showModal();
+    this.speedDays = days;
+    this.speedPage = 0;
+    const request = {end:Date.now(), loading:true};
+    this.speedLog = request;
+    this.drawSpeedHistory();
+    try {
+      request.data = await this.fetchSpeedReadings(this.speedSeries.map(({id}) => id), days, request.end) || {};
+    } catch {
+      request.error = true;
+    } finally {
+      request.loading = false;
+      if (this.speedLog === request && dialog.open) this.drawSpeedHistory();
+    }
+  }
+
+  drawSpeedHistory() {
+    const content = this.shadowRoot.querySelector(".speed-log");
+    const request = this.speedLog;
+    for (const button of this.shadowRoot.querySelectorAll('[data-action="speed-range"]')) {
+      button.setAttribute("aria-pressed", String(Number(button.dataset.id) === this.speedDays));
+    }
+    if (request.loading || request.error) {
+      content.innerHTML = `<p role="status">${request.loading ? "Loading recorded readings…" : "Speedtest history could not be loaded."}</p>`;
+      return;
+    }
+    const series = this.speedSeries;
+    const byMinute = new Map();
+    for (const {id,key} of series) {
+      for (const [time,value] of (request.data[id] || []).map(recordedSpeed)) {
+        if (!Number.isFinite(time) || value === null) continue;
+        const minute = Math.floor(time / 60000) * 60000;
+        if (!byMinute.has(minute)) byMinute.set(minute, {});
+        byMinute.get(minute)[key] = value;
+      }
+    }
+    const rows = [...byMinute.entries()].sort(([a],[b]) => b-a);
+    const pageSize = 20;
+    const pages = Math.ceil(rows.length / pageSize);
+    const format = (value) => value == null ? "—" : value.toLocaleString(undefined, {maximumFractionDigits:1});
+    content.innerHTML = rows.length ? `
+      <div class="speed-history-chart">${speedGraph(request.data, series, {days:this.speedDays, style:"wave", end:request.end})}</div>
+      ${series.some(({key,id}) => key === "ping" && request.data[id]?.length) ?
+        `<div class="speed-history-chart ping-chart"><span class="muted">Ping · ms</span>
+          ${speedGraph(request.data, series, {days:this.speedDays, style:"wave", end:request.end, ping:true})}</div>` : ""}
+      <p class="muted">First recorded reading: ${escape(new Date(rows.at(-1)[0]).toLocaleString())} · Download and upload share a scale.</p>
+      <div class="speed-table-wrap"><table><thead><tr><th scope="col">Recorded time</th>${series.map(({label,unit}) => `<th scope="col">${label} (${unit})</th>`).join("")}</tr></thead>
+        <tbody>${rows.slice(this.speedPage * pageSize, (this.speedPage + 1) * pageSize).map(([time,values]) =>
+          `<tr><th scope="row">${escape(new Date(time).toLocaleString())}</th>${series.map(({key}) => `<td>${escape(format(values[key]))}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>
+      ${pages > 1 ? `<div class="row speed-paging">
+        <button type="button" data-action="speed-page" data-id="-1" ${this.speedPage ? "" : "disabled"}>Newer</button>
+        <span>Page ${this.speedPage + 1} of ${pages}</span>
+        <button type="button" data-action="speed-page" data-id="1" ${this.speedPage + 1 < pages ? "" : "disabled"}>Older</button>
+      </div>` : ""}` : '<p role="status">No recorded Speedtest readings for this period.</p>';
   }
 
   async refreshSpeedHistory() {
@@ -178,11 +274,7 @@ class OutageWatchCard extends HTMLElement {
     this.speedHistoryKey = key;
     this.speedHistoryDue = now + 5 * 60 * 1000;
     try {
-      const history = await this._hass.callWS({
-        type:"history/history_during_period", entity_ids:ids,
-        start_time:new Date(now - SPEED_WINDOW).toISOString(), end_time:new Date(now).toISOString(),
-        minimal_response:true, no_attributes:true,
-      });
+      const history = await this.fetchSpeedReadings(ids, 1, now, true);
       this.speedHistory = history || {};
     } catch {
       this.speedHistory = {};
@@ -236,14 +328,19 @@ class OutageWatchCard extends HTMLElement {
       <button type="button" data-action="speedtest" ${this.speedRunning ? "disabled" : ""}>${this.speedRunning ? "Testing…" : "Run test"}</button>
       <span role="status" class="speed-message" title="${escape(this.speedMessage)}">${escape(this.speedMessage)}</span>
     </div>` : "";
-    return `<div class="speed-panel" title="${escape(last ? `Speedtest updated ${last}` : "Most recent Speedtest readings")}">
-      <div class="speed-trend">${this.speedLoading && !this.speedHistory ? '<span class="speed-empty">Loading history</span>' : speedGraph(this.speedHistory || {}, series)}<span class="speed-caption">Speedtest · 24h</span></div>
-      <div class="speed-values">${series.map(({id,key,label,arrow,unit}) => {
+    return `<div class="speed-panel" data-speed-style="${this.speedStyle}" title="${escape(last ? `Speedtest updated ${last}` : "Most recent Speedtest readings")}">
+      <button type="button" class="speed-view" data-action="speed-history" aria-label="Open Speedtest history" aria-haspopup="dialog">
+      ${this.speedStyle === "gauges" || this.speedStyle === "rails" ? "" : `<span class="speed-trend">${this.speedLoading && !this.speedHistory ? '<span class="speed-empty">Loading history</span>' : speedGraph(this.speedHistory || {}, series, {style:this.speedStyle})}<span class="speed-caption">Speedtest · 24h</span></span>`}
+      <span class="speed-values">${series.map(({id,key,label,arrow,unit}) => {
         const sensor = this._hass.states[id];
         const reading = numeric(sensor.state);
         const value = reading === null ? "—" : reading.toLocaleString(undefined, {maximumFractionDigits:1});
-        return `<span class="${key}" aria-label="${escape(`${label} ${value} ${unit}`)}"><b>${arrow} ${escape(value)}</b> ${escape(sensor.attributes?.unit_of_measurement || unit)}</span>`;
-      }).join("")}</div>${action}
+        const scale = key === "download" ? 1000 : key === "upload" ? 500 : 100;
+        const progress = Math.round(100 * Math.min(1, Math.max(0, (reading ?? 0) / scale)));
+        return `<span class="speed-metric ${key}" style="--speed-progress:${progress}%" title="${label} · scale 0–${scale} ${unit}">
+          <b>${arrow} ${escape(value)}</b> ${escape(sensor.attributes?.unit_of_measurement || unit)}
+        </span>`;
+      }).join("")}</span></button>${action}
     </div>`;
   }
 
@@ -280,12 +377,12 @@ class OutageWatchCard extends HTMLElement {
     if (!button) return;
     const {action, id} = button.dataset;
     if (action === "themes") {
-      const dialog = this.shadowRoot.querySelector("dialog");
+      const dialog = this.shadowRoot.querySelector(".theme-dialog");
       dialog.showModal();
       dialog.querySelector('[aria-pressed="true"]')?.focus();
       return;
     }
-    if (action === "close-themes") return this.shadowRoot.querySelector("dialog").close();
+    if (action === "close-themes") return this.shadowRoot.querySelector(".theme-dialog").close();
     if (action === "choose-theme") return this.chooseTheme(id);
     if (action === "server-info") {
       this.showServerInfo = !this.showServerInfo;
@@ -309,6 +406,24 @@ class OutageWatchCard extends HTMLElement {
       for (const choice of this.shadowRoot.querySelectorAll('[data-action="mobile-layout"]')) {
         choice.setAttribute("aria-pressed", String(choice.dataset.id === id));
       }
+      return;
+    }
+    if (action === "speed-history") return this.openSpeedHistory();
+    if (action === "close-speed-history") return this.shadowRoot.querySelector(".speed-dialog").close();
+    if (action === "speed-range" && Object.hasOwn(SPEED_RANGES, id)) return this.openSpeedHistory(Number(id));
+    if (action === "speed-page") {
+      this.speedPage += Number(id);
+      this.drawSpeedHistory();
+      this.shadowRoot.querySelector(`[data-action="speed-page"][data-id="${id}"]:not(:disabled)`)?.focus();
+      return;
+    }
+    if (action === "speed-style" && Object.hasOwn(SPEED_STYLES, id)) {
+      this.speedStyle = id;
+      try { localStorage.setItem(SPEED_STYLE_KEY, id); } catch { /* In-memory choice. */ }
+      for (const choice of this.shadowRoot.querySelectorAll('[data-action="speed-style"]')) {
+        choice.setAttribute("aria-pressed", String(choice.dataset.id === id));
+      }
+      this.speedStyleChanged = true;
       return;
     }
     if (action === "speedtest") return this.runSpeedtest();
@@ -488,6 +603,33 @@ class OutageWatchCard extends HTMLElement {
       .download {color:#a4cfff}
       .upload {color:#c7b2ff}
       .speed-values .ping {color:var(--muted)}
+      .speed-panel .speed-view,.shell:not([data-theme="steel"]) .speed-panel .speed-view {
+        display:flex;align-items:center;gap:6px;background:transparent;
+        border:0;box-shadow:none;padding:1px 2px;text-align:left;min-width:0;
+      }
+      .speed-view:hover .speed-caption {text-decoration:underline}
+      .speed-panel[data-speed-style="matrix"] .speed-chart {
+        background:radial-gradient(circle,#70edf961 0 1px,transparent 1.2px) 0 0/5px 4px;
+        filter:drop-shadow(0 0 3px #75f8de);
+      }
+      .speed-panel[data-speed-style="gauges"] .speed-metric {
+        min-width:45px;min-height:43px;display:grid;place-content:center;text-align:center;
+        padding:4px;color:#d3fbff;border:1px solid #8defff55;border-radius:50%;
+        background:radial-gradient(circle,#12262e 57%,transparent 59%),
+                   conic-gradient(#77edde var(--speed-progress),#203945 0);
+      }
+      .speed-panel[data-speed-style="rails"] .speed-metric {
+        display:block;min-width:48px;padding:2px 4px 4px;position:relative;
+        border-bottom:1px solid #68d9e280;
+      }
+      .speed-panel[data-speed-style="rails"] .speed-metric::after {
+        content:"";width:var(--speed-progress);height:3px;background:currentColor;
+        border-radius:4px;position:absolute;bottom:0;left:0;box-shadow:0 0 5px currentColor;
+      }
+      .speed-panel[data-speed-style="wave"] .speed-chart {
+        background:linear-gradient(180deg,#1d5663aa,#09232c);
+        filter:drop-shadow(0 0 3px #62e6f280);
+      }
       .speed-action {display:grid;justify-items:center;gap:2px;min-width:66px}
       .speed-action button {font-size:11px;line-height:1.15;padding:5px 7px;white-space:nowrap}
       .speed-message {font-size:9px;line-height:1.1;color:var(--muted);max-width:76px;text-align:center}
@@ -625,12 +767,26 @@ class OutageWatchCard extends HTMLElement {
         .speed-trend,.speed-chart {width:74px}
         .speed-values {gap:4px;font-size:10px}
       }
-      .theme-dialog {
+      .theme-dialog,.speed-dialog {
         box-sizing:border-box;width:min(540px,calc(100vw - 26px));max-height:calc(100dvh - 26px);
         color:var(--ink);background:var(--theme-surface,#22262b);border:1px solid var(--line);
         padding:16px;border-radius:14px;box-shadow:0 12px 54px #0009;
       }
-      .theme-dialog::backdrop {background:#060a1199}
+      .theme-dialog::backdrop,.speed-dialog::backdrop {background:#060a1199}
+      .speed-dialog {width:min(690px,calc(100vw - 26px))}
+      .speed-ranges,.speed-style-controls {display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+      .speed-ranges button[aria-pressed="true"] {outline:2px solid var(--blue);outline-offset:-2px}
+      .speed-log {margin-top:10px}
+      .speed-history-chart .speed-chart {width:100%;height:130px;background:var(--theme-raised,#17232b);border-radius:6px}
+      .speed-history-chart .speed-chart path {vector-effect:non-scaling-stroke}
+      .speed-history-chart.ping-chart {margin-top:7px}
+      .ping-chart .speed-chart {height:65px}
+      .ping-chart .ping {color:var(--good)}
+      .speed-table-wrap {overflow:auto;max-height:45vh;margin-top:8px}
+      .speed-table-wrap table {width:100%;border-collapse:collapse;font-size:12px}
+      .speed-table-wrap :is(th,td) {padding:6px;text-align:left;border-bottom:1px solid var(--line)}
+      .speed-table-wrap tbody th {font-weight:400}
+      .speed-paging {margin-top:8px}
       .theme-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr));gap:8px;margin-top:12px}
       .theme-choice {display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px;text-align:left;min-width:0}
       .theme-choice[aria-pressed="true"] {outline:2px solid var(--blue);outline-offset:-2px}
@@ -768,10 +924,23 @@ class OutageWatchCard extends HTMLElement {
           <p class="muted">Applies on narrow screens and is saved in this browser.</p>
         </fieldset>
         <fieldset class="layout-options">
+          <legend>Speedtest style</legend>
+          <div class="speed-style-controls">${Object.entries(SPEED_STYLES).map(([id,name]) =>
+            `<button type="button" data-action="speed-style" data-id="${id}" aria-pressed="${this.speedStyle === id}">${name}</button>`).join("")}</div>
+        </fieldset>
+        <fieldset class="layout-options">
           <legend>Server info</legend>
           <button type="button" data-action="server-info" aria-pressed="${this.showServerInfo}">${this.showServerInfo ? "Hide server info" : "Show server info"}</button>
           <p class="muted">Show host metrics from your existing Home Assistant sensors.</p>
         </fieldset>
+      </dialog>
+      <dialog class="speed-dialog" aria-labelledby="ow-speed-title">
+        <div class="row"><h2 id="ow-speed-title">Speedtest history</h2><button type="button" data-action="close-speed-history" aria-label="Close Speedtest history">×</button></div>
+        <div class="speed-ranges" role="group" aria-label="History period">
+          ${Object.entries(SPEED_RANGES).map(([days,label]) => `<button type="button" data-action="speed-range" data-id="${days}">${label}</button>`).join("")}
+        </div>
+        <p class="muted">Shows recorded sensor changes. Longer ranges can be incomplete if Home Assistant has purged older history.</p>
+        <div class="speed-log"></div>
       </dialog>
       <header><div><h1>Outage Map</h1><p>Your services, at a glance.</p></div><div class="header-controls">${connection}${this.speedHeader()}<button type="button" class="theme-open" data-action="themes" aria-haspopup="dialog">Theme</button>${can_manage ? '<button class="primary" data-action="add">+ Add service</button>' : ""}</div></header>
       ${this.loadError ? `<p class="notice" role="status">${escape(this.loadError)}</p>` : ""}

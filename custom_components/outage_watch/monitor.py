@@ -79,7 +79,7 @@ class Monitor:
             connector=aiohttp.TCPConnector(resolver=self.resolver, limit=8),
             timeout=aiohttp.ClientTimeout(total=10),
             cookie_jar=aiohttp.DummyCookieJar(),
-            headers={"User-Agent": "OutageMap/0.2.4 (+https://github.com/yanke7/Home-Assistant)"},
+            headers={"User-Agent": "OutageMap/0.2.5 (+https://github.com/yanke7/Home-Assistant)"},
         )
         self.control_task = asyncio.create_task(self.watch_connection())
         for service in self.services.values():

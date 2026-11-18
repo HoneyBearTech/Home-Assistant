@@ -20,7 +20,7 @@ The integration doesn't create a sidebar dashboard automatically. If the card is
 type: custom:outage-watch-card
 ```
 
-If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.4` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
+If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.5` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
 
 ## Install for beta testing
 
@@ -41,6 +41,10 @@ The Outage Map card includes the graph and button. The measurements come from Ho
 1. In **Settings → Devices & services → Add integration**, search for **Speedtest.net** and set it up. No separate HACS download is needed for Speedtest.net.
 2. Once its sensors have readings, refresh your Outage Map dashboard. The header automatically shows the available readings from `sensor.speedtest_download`, `sensor.speedtest_upload`, and `sensor.speedtest_ping`. Without those sensors the Speedtest section stays hidden.
 3. Administrators can select **Run test** to refresh the readings on demand. The 24-hour download and upload graph uses Home Assistant History and needs recorded sensor data.
+
+Open **Theme → Speedtest style** to choose **Classic**, **Signal Matrix**, **Neon Gauges**, **Flux Rails**, or **Aqua Wave**. Classic is the default, and the choice is saved per browser. The header trends use 24 hours of history. Gauges and rails display the latest readings.
+
+Click the graph or readings to open **Speedtest history**. Select **24 hours**, **7 days**, or **30 days** to view recorded download, upload, and ping. Home Assistant Recorder typically retains 10 days of detailed history by default. The longer view displays what is actually available and shows the oldest reading found. Hourly long-term averages are separate from this log.
 
 If you renamed the sensors, set `speedtest_download_entity`, `speedtest_upload_entity`, and `speedtest_ping_entity` in the card YAML. The catalog's **Ookla Speedtest** tile checks whether the public website responds and is separate from the bandwidth graph.
 
