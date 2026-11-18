@@ -24,11 +24,10 @@ function graph(service, detailed = false) {
   const now = Date.now() / 1000, height = detailed ? 120 : 26;
   // Reachability checks can back off to four polling intervals. The monitor
   // considers a reading fresh for five intervals, including scheduling jitter.
-  const maxGap = 5 * (service.scan_interval > 0 ? service.scan_interval : 300);
   let previous = null, single = "", dots = "", path = "";
-  for (const [time, state, ms] of rows) {
+  for (const [time, state, ms, interval = 300] of rows) {
     if (state !== "ok") { previous = null; continue; }
-    const gap = previous === null || time - previous > maxGap;
+    const gap = previous === null || time - previous > 5 * interval;
     const x = Math.max(0, Math.min(320, 320 * (time - now + 86400) / 86400));
     const y = height - 2 - (height - 4) * ms / max;
     path += `${gap ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)} `;

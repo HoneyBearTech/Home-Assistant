@@ -9,13 +9,15 @@ const start = Date.now() / 1000 - 18000;
 for (const detailed of [false, true]) {
   test(detailed ? "detail chart" : "compact chart", () => {
     function trace(times, interval) {
-      const history = times.map(([offset, state = "ok"]) => [start + offset, state, 12]);
-      const svg = context.graph({history, scan_interval: interval}, detailed);
+      const history = times.map(([offset, state = "ok", cadence = interval]) =>
+        cadence === undefined ? [start + offset, state, 12] : [start + offset, state, 12, cadence]);
+      const svg = context.graph({history}, detailed);
       return [svg.match(/class="trace" d="([^"]*)"/)[1].replace(/[^ML]/g, ""), (svg.match(/<circle/g) || []).length];
     }
     assert.deepEqual(trace([[0], [60], [300]], 60), ["MLL", 0]);
     assert.deepEqual(trace([[0], [60, "failed"], [120]], 60), ["MM", 2]);
     assert.deepEqual(trace([[0], [7200], [7260]], 60), ["MML", 1]);
+    assert.deepEqual(trace([[0], [1200, "ok", 300], [1800, "ok", 60]], 60), ["MLM", 1]);
     assert.deepEqual(trace([[0]], 60), ["M", 1]);
     assert.deepEqual(trace([[0], [1200], [3600]]), ["MLM", 1]);
   });

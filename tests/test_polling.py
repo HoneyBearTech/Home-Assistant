@@ -57,6 +57,14 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.instance = monitor.Monitor(Mock(), entry, [])
         self.instance.control = True
 
+    async def test_saved_chart_history_retains_observation_cadence(self):
+        m = self.instance
+        now = monitor.time()
+        samples = [[now - 2, "ok", 15], [now - 1, "ok", 18, 120]]
+        m.store.async_load = AsyncMock(return_value={"services": {"a": {"id": "a", "samples": samples}}})
+        await m.load()
+        self.assertEqual(m.services["a"]["samples"], [[now - 2, "ok", 15, 60], [now - 1, "ok", 18, 120]])
+
     async def test_empty_list_and_task_lifecycle(self):
         m = self.instance
         m.watch_connection = AsyncMock(side_effect=lambda: None)
