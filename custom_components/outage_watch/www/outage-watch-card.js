@@ -104,11 +104,14 @@ class OutageWatchCard extends HTMLElement {
       if (validTheme(saved)) this.theme = saved;
       if (localStorage.getItem(MOBILE_LAYOUT_KEY) === "double") this.mobileLayout = "double";
     } catch { /* Theme selection still works without storage. */ }
+    this.shadowRoot.addEventListener("change", (event) => {
+      if (event.target.id === "catalog-category") this.filterCatalog();
+    });
     this.appearanceReady = () => this.syncAppearance();
     this.shadowRoot.addEventListener("click", (event) => this.handle(event));
     this.shadowRoot.addEventListener("submit", (event) => this.submit(event));
     this.shadowRoot.addEventListener("input", (event) => {
-      if (event.target.id === "search") this.filterCatalog(event.target.value);
+      if (event.target.id === "search") this.filterCatalog();
     });
   }
   setConfig(config) { this.config = config; this.render(); }
@@ -306,15 +309,22 @@ class OutageWatchCard extends HTMLElement {
     this.change("add_service", {name: data.get("name"), url: data.get("url")});
   }
 
-  filterCatalog(query) {
+  filterCatalog() {
+    const query = this.shadowRoot.querySelector("#search").value.trim().toLowerCase();
+    const category = this.shadowRoot.querySelector("#catalog-category").value;
+    let matches = 0;
     for (const element of this.shadowRoot.querySelectorAll("[data-search]")) {
-      element.hidden = !element.dataset.search.toLowerCase().includes(query.trim().toLowerCase());
+      element.hidden = !element.dataset.search.toLowerCase().includes(query) ||
+        (category !== "" && element.dataset.category !== category);
+      if (!element.hidden) matches += 1;
     }
+    this.shadowRoot.querySelector(".catalog-empty").hidden = matches > 0;
   }
 
   render() {
     if (this.shadowRoot.querySelector("dialog[open]")) return;
     const {services = [], catalog = [], connected, can_manage, notify_configured} = this.data || {};
+    const categories = [...new Set(catalog.map((item) => item.category).filter(Boolean))].sort();
     const ordered = [...services].sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
     const selected = this.selected === undefined ? ordered[0] : services.find((item) => item.id === this.selected);
     this.activeService = selected;
@@ -478,7 +488,9 @@ class OutageWatchCard extends HTMLElement {
       .danger {color:var(--bad)}
       .notice {margin-top:14px}
       .add-box {margin-bottom:14px}
-      .catalog {display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+      .catalog-controls {display:flex;flex-wrap:wrap;gap:6px}
+      .catalog-controls select {font:inherit;color:var(--ink);background:var(--theme-raised,#202429);border:1px solid var(--line);border-radius:8px;padding:6px;max-width:100%}
+      .catalog {display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;max-height:220px;overflow:auto;padding:3px}
       .add-box form {display:flex;gap:8px;flex-wrap:wrap}
       .add-box input {min-width:0;max-width:100%;background:#16191d;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
       .add-box form input {flex:1 1 160px}
@@ -690,8 +702,11 @@ class OutageWatchCard extends HTMLElement {
       ${connected === false ? '<div class="banner warning"><strong>Internet connectivity may be disrupted</strong><p>Home Assistant couldn’t reach either connectivity check. Service alerts are paused.</p></div>' :
         incident ? `<div class="banner"><strong>${escape(incident.name)} is reporting an incident</strong><p>${escape(incident.incident || "See official status for details.")}</p></div>` : ""}
       ${this.adding ? `<section class="add-box"><div class="row"><h2>Track a service</h2><button data-action="cancel">Close</button></div>
-        <input id="search" type="search" aria-label="Search catalog" placeholder="Search catalog">
-        <div class="catalog">${catalog.filter((item) => !services.some((service) => service.id === item.id)).map((item) => `<button data-search="${escape(item.name)}" data-action="track" data-id="${escape(item.id)}">${escape(item.name)}</button>`).join("")}</div>
+        <div class="catalog-controls"><input id="search" type="search" aria-label="Search catalog" placeholder="Search catalog">
+        <select id="catalog-category" aria-label="Service category"><option value="">All categories</option>
+        ${categories.map((name) => `<option>${escape(name)}</option>`).join("")}</select></div>
+        <div class="catalog">${catalog.filter((item) => !services.some((service) => service.id === item.id)).map((item) => `<button data-search="${escape(item.name)}" data-category="${escape(item.category)}" data-action="track" data-id="${escape(item.id)}">${escape(item.name)}</button>`).join("")}</div>
+        <p class="muted catalog-empty" hidden>No matching catalog services.</p>
         <form><input name="name" aria-label="Service name" placeholder="Service name" maxlength="80" required><input name="url" type="url" aria-label="Public HTTP URL" placeholder="https://example.com" required><button class="primary">Track URL</button></form></section>` : ""}
       <div class="layout ${selected ? "with-detail" : ""}">
         <div class="tiles">${ordered.map((item) => `<button class="tile" data-action="select" data-id="${escape(item.id)}" aria-pressed="${selected?.id === item.id}">

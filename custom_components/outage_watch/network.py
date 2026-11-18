@@ -10,6 +10,12 @@ from yarl import URL
 
 from .apple import FEED_URL as APPLE_FEED_URL, parse_icloud
 from .google import FEED_URL as GOOGLE_FEED_URL, parse_workspace
+from .statuspage import parse_feed
+
+SUMMARY_ONLY_FEEDS = frozenset({
+    "https://status.plex.tv/api/v2/summary.json",
+    "https://status.tailscale.com/api/v2/summary.json",
+})
 
 class PublicResolver(AbstractResolver):
     def __init__(self):
@@ -64,23 +70,6 @@ async def probe(session, value):
         pass
     return "failed", None, None
 
-def parse_feed(payload):
-    level = payload["status"]["indicator"]
-    if level not in ("none", "minor", "major", "critical", "maintenance"):
-        raise ValueError("Unrecognized provider status")
-    incidents = payload["incidents"]
-    if not isinstance(incidents, list):
-        raise ValueError("Invalid incident list")
-    incident = incidents[0] if incidents else {}
-    return {
-        "level": "none" if level == "maintenance" else level,
-        "maintenance": level == "maintenance" or any(
-            item.get("status") == "in_progress" for item in payload.get("scheduled_maintenances", [])
-        ),
-        "incident": str(incident.get("name", ""))[:300],
-        "components": [str(item["name"])[:100] for item in incident.get("components", [])][:20],
-    }
-
 async def feed_update(session, url, previous):
     headers = {"If-None-Match": previous["etag"]} if previous.get("etag") else {}
     try:
@@ -98,7 +87,8 @@ async def feed_update(session, url, previous):
                 data = parse_icloud(body)
             else:
                 payload = json.loads(body)
-                data = parse_workspace(payload) if url == GOOGLE_FEED_URL else parse_feed(payload)
+                data = (parse_workspace(payload) if url == GOOGLE_FEED_URL else
+                        parse_feed(payload, summary_only=url in SUMMARY_ONLY_FEEDS))
             return {"data": data, "etag": response.headers.get("ETag")}
     except (aiohttp.ClientError, TimeoutError, ValueError, KeyError, TypeError, AttributeError):
         return None
