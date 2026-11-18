@@ -4,23 +4,31 @@ A Home Assistant dashboard and sensors for provider incidents and checks from yo
 
 Open [the sample dashboard](docs/card-preview.html) in a browser to try the layout and controls with fictional data.
 
-## Install for beta testing
+## Already configured? Open or create a dashboard
 
-[![Open Outage Map in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=yanke7&repository=Home-Assistant&category=integration)
+If **Settings → Devices & services → Outage Map** shows an Outage Map entry, setup is complete. **Close the “Outage Map is already configured” dialog and skip the install steps.** One entity is normal before adding any monitors. It's the internet connectivity sensor.
 
-1. Click the button to open Outage Map in HACS on your Home Assistant instance. If the button cannot reach your instance, open **Custom repositories** in HACS and add `https://github.com/yanke7/Home-Assistant` as an **Integration**.
-2. Download **Outage Map**, then restart Home Assistant.
-3. Open **Settings → Devices & services → Add integration → Outage Map**.
-4. Create a dashboard, open it in edit mode, and add the **Outage Map** card. A panel view gives its service grid the full width. Refresh the browser after setting up the integration so it can load the bundled card.
-5. Choose **Add service** to select providers from the catalog or enter a public HTTP(S) endpoint.
+1. Open **Settings → Dashboards → Add dashboard → New dashboard from scratch**. Name it **Outage Map** and select **Create**. You can also use an existing editable dashboard.
+2. Open that dashboard and refresh the browser or reopen the Home Assistant app. Select **Edit dashboard → Add card**, then search for **Outage Map** and save it.
+3. Click **+ Add service inside the Outage Map card** and choose a provider. The **Add service** button on the **Devices & services** page starts integration setup again.
 
-If the card picker is unavailable, use this card configuration:
+The integration doesn't create a sidebar dashboard automatically. If the card is missing from the picker, choose **Manual** and paste this into the card editor:
 
 ```yaml
 type: custom:outage-watch-card
 ```
 
-For manual installation, copy `custom_components/outage_watch` from the repository into your Home Assistant configuration directory under `custom_components/`, restart, and continue at step 3.
+If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.0` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
+
+## Install for beta testing
+
+[![Open Outage Map in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=yanke7&repository=Home-Assistant&category=integration)
+
+1. Click the button to open Outage Map in HACS. If the button cannot reach your instance, open **Custom repositories** in HACS and add `https://github.com/yanke7/Home-Assistant` as an **Integration**.
+2. Download **Outage Map**, then restart Home Assistant.
+3. In **Settings → Devices & services**, add **Outage Map** once if it isn't already listed. Then follow the dashboard steps above.
+
+For manual installation, copy `custom_components/outage_watch` into your Home Assistant configuration directory under `custom_components/`, restart, and continue at step 3.
 
 If you already use Outage Watch, the integration domain and card type are unchanged. Keep your existing config entry to retain settings, service IDs, and history. Back up your configuration before replacing the manually installed component with HACS files.
 
