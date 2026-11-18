@@ -7,6 +7,7 @@ class WatchEntity:
     def __init__(self, monitor, service_id, kind, label):
         self.monitor = monitor
         self.service_id = service_id
+        self.signal = monitor.change if kind == "connectivity" else monitor.service_change(service_id)
         self._attr_unique_id = monitor.unique(service_id, kind)
         self._attr_name = label
 
@@ -21,5 +22,5 @@ class WatchEntity:
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self.async_on_remove(async_dispatcher_connect(
-            self.hass, self.monitor.change, self.async_write_ha_state
+            self.hass, self.signal, self.async_write_ha_state
         ))
