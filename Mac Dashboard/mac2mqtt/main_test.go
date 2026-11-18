@@ -25,7 +25,7 @@ func TestPowerCommands(t *testing.T) {
 				t.Fatalf("missing action for %s", command)
 			}
 			calls := 0
-			actions := map[string]func(){command: func() { calls++ }}
+			actions := map[string]func() error{command: func() error { calls++; return nil }}
 			msg := powerMessage{topic: getTopicPrefix() + "/command/" + command, payload: command, retained: true}
 			dispatchPowerCommand(msg, actions)
 			if calls != 0 {

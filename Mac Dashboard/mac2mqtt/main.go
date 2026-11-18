@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
@@ -50,6 +49,8 @@ func commandMirroring(client mqtt.Client, mode string) {
 }
 
 type config struct {
+	TLS      bool   `yaml:"mqtt_tls"`
+	CAFile   string `yaml:"mqtt_ca_file"`
 	Ip       string `yaml:"mqtt_ip"`
 	Port     string `yaml:"mqtt_port"`
 	User     string `yaml:"mqtt_user"`
@@ -108,71 +109,35 @@ func getHostname() string {
 	return firstPart
 }
 
-func runCommand(name string, arg ...string) {
-	cmd := exec.Command(name, arg...)
-
-	_, err := cmd.Output()
-	if err != nil {
-		log.Fatal(err)
-	}
+func runCommand(name string, arg ...string) error {
+	return exec.Command(name, arg...).Run()
 }
 
-func commandSleep() {
-	runCommand("pmset", "sleepnow")
-}
-
-func commandDisplaySleep() {
-	runCommand("pmset", "displaysleepnow")
-}
-
-func commandDisplayWake() {
-	// Assert user activity briefly to wake the displays without preventing
-	// subsequent manual sleep or changing the user's idle sleep settings.
-	runCommand("/usr/bin/caffeinate", "-u", "-t", "5")
-	log.Println("Display wake request completed")
-}
-
-func commandShutdown() {
-
+func commandSleep() error        { return runCommand("pmset", "sleepnow") }
+func commandDisplaySleep() error { return runCommand("pmset", "displaysleepnow") }
+func commandDisplayWake() error  { return runCommand("/usr/bin/caffeinate", "-u", "-t", "5") }
+func commandShutdown() error {
 	if os.Getuid() == 0 {
-		// if the program is run by root user we are doing the most powerfull shutdown - that always shuts down the computer
-		runCommand("shutdown", "-h", "now")
-	} else {
-		// if the program is run by ordinary user we are trying to shutdown, but it may fail if the other user is logged in
-		runCommand("/usr/bin/osascript", "-e", "tell app \"System Events\" to shut down")
+		return runCommand("shutdown", "-h", "now")
 	}
-
+	return runCommand("/usr/bin/osascript", "-e", `tell app "System Events" to shut down`)
 }
 
 var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	log.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
 }
 
-var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
-	log.Println("Connected to MQTT")
-
-	token := client.Publish(getTopicPrefix()+"/status/alive", 0, true, "true")
-	token.Wait()
-
-	log.Println("Sending 'true' to topic: " + getTopicPrefix() + "/status/alive")
-
-	listen(client, getTopicPrefix()+"/command/#")
-}
-
-var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
-	log.Printf("Disconnected from MQTT: %v", err)
-}
-
-func getMQTTClient(ip, port, user, password string) mqtt.Client {
-
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%s", ip, port))
-	opts.SetUsername(user)
-	opts.SetPassword(password)
-	opts.OnConnect = connectHandler
-	opts.OnConnectionLost = connectLostHandler
-
-	opts.SetWill(getTopicPrefix()+"/status/alive", "false", 0, true)
+func getMQTTClient(c config) mqtt.Client {
+	opts, err := brokerOptions(c)
+	if err != nil {
+		log.Fatal(err)
+	}
+	readiness := &commandReadiness{retry: 15 * time.Second, timeout: 15 * time.Second}
+	opts.SetWriteTimeout(10 * time.Second)
+	opts.SetCustomOpenConnectionFn(readiness.open)
+	opts.OnConnect = readiness.connected
+	opts.OnConnectionLost = func(_ mqtt.Client, err error) { log.Printf("Disconnected from MQTT: %v", err) }
+	opts.SetWill(getTopicPrefix()+"/status/alive", "false", 1, true)
 
 	client := mqtt.NewClient(opts)
 	for {
@@ -192,14 +157,14 @@ func getTopicPrefix() string {
 	return "mac2mqtt/" + hostname
 }
 
-var powerActions = map[string]func(){
+var powerActions = map[string]func() error{
 	"sleep":        commandSleep,
 	"displaysleep": commandDisplaySleep,
 	"displaywake":  commandDisplayWake,
 	"shutdown":     commandShutdown,
 }
 
-func dispatchPowerCommand(msg mqtt.Message, actions map[string]func()) {
+func dispatchPowerCommand(msg mqtt.Message, actions map[string]func() error) {
 	if msg.Retained() {
 		return
 	}
@@ -213,31 +178,24 @@ func dispatchPowerCommand(msg mqtt.Message, actions map[string]func()) {
 	}
 	payload := msg.Payload()
 	if len(payload) == len(command) && string(payload) == command {
-		action()
+		if err := action(); err != nil {
+			log.Printf("Power command %s failed: %v", command, err)
+		}
 	}
 }
 
-func listen(client mqtt.Client, topic string) {
-
-	token := client.Subscribe(topic, 0, func(client mqtt.Client, msg mqtt.Message) {
-
-		if msg.Topic() == getTopicPrefix()+"/command/mirroring" && !msg.Retained() {
-			mode := string(msg.Payload())
-			if mode == "start" || mode == "stop" || mode == "cameras" {
-				go commandMirroring(client, mode)
-			}
+func handleMessage(client mqtt.Client, msg mqtt.Message) {
+	if msg.Topic() == getTopicPrefix()+"/command/mirroring" && !msg.Retained() {
+		mode := string(msg.Payload())
+		if mode == "start" || mode == "stop" || mode == "cameras" {
+			go commandMirroring(client, mode)
 		}
-
-		systemAudio.handleAudioCommand(client, msg, runAudioScript)
-
-		dispatchPowerCommand(msg, powerActions)
-
-	})
-
-	token.Wait()
-	if token.Error() != nil {
-		log.Printf("Token error: %s\n", token.Error())
 	}
+
+	systemAudio.handleAudioCommand(client, msg, runAudioScript)
+
+	dispatchPowerCommand(msg, powerActions)
+
 }
 
 var batteryPercent = regexp.MustCompile(`(^|[[:space:]])([0-9]{1,3})%(;|[[:space:]]|$)`)
@@ -274,7 +232,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	hostname = getHostname()
-	mqttClient := getMQTTClient(c.Ip, c.Port, c.User, c.Password)
+	mqttClient := getMQTTClient(c)
 
 	volumeTicker := time.NewTicker(2 * time.Second)
 	batteryTicker := time.NewTicker(60 * time.Second)
