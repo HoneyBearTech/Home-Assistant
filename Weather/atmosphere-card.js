@@ -1,10 +1,37 @@
 class AtmosphereCard extends HTMLElement {
  constructor(){super();this.attachShadow({mode:'open'});this.forecasts={};this.unsubs=[];this.tab='hourly';this.events=[];this.calendarStatus='Loading schedule…';this.connected=false;}
- setConfig(c){this.config=c;}
+ setConfig(c){this.config=c;this.start();this.render();}
  connectedCallback(){window.YankeAppearance?.fitViewport(this);this.connected=true;this.start();this.clock=setInterval(()=>{this.render();this.loadCalendar()},300000);}
- disconnectedCallback(){window.YankeAppearance?.releaseViewport(this);this.connected=false;clearInterval(this.clock);this.unsubs.splice(0).forEach(f=>f());this.started=false;}
+ disconnectedCallback(){window.YankeAppearance?.releaseViewport(this);this.connected=false;clearInterval(this.clock);this.stopForecasts();}
  set hass(h){const appearanceHass=h;if(window.YankeAppearance)window.YankeAppearance.apply(this,appearanceHass);else if(!this._appearanceWaiting){this._appearanceWaiting=true;window.addEventListener('yanke-appearance-ready',()=>window.YankeAppearance.apply(this,this._hass||appearanceHass),{once:true});}this._hass=h;if(this.radar)this.radar.hass=h;this.start();this.render();}
- start(){if(!this.connected||!this._hass||this.started)return;this.started=true;for(const type of ['hourly','daily'])this._hass.connection.subscribeMessage(r=>{this.forecasts[type]=r.forecast||[];this.render()},{type:'weather/subscribe_forecast',entity_id:this.config.entity,forecast_type:type}).then(f=>{if(this.connected)this.unsubs.push(f);else f()}).catch(()=>{this.forecasts[type]=null;this.render()});this.loadCalendar();}
+ stopForecasts(){
+  this.source=null;
+  this.forecasts={};
+  for(const unsubscribe of this.unsubs.splice(0))Promise.resolve().then(unsubscribe).catch(()=>{});
+ }
+ start(){
+  const entity=this.config?.entity,connection=this._hass?.connection;
+  if(!this.connected)return;
+  if(this.source&&this.source.entity===entity&&this.source.connection===connection)return;
+  this.stopForecasts();
+  if(!entity||!connection)return;
+  const source=this.source={entity,connection};
+  for(const type of ['hourly','daily']){
+   connection.subscribeMessage(result=>{
+    if(this.source!==source)return;
+    this.forecasts[type]=result.forecast||[];
+    this.render();
+   },{type:'weather/subscribe_forecast',entity_id:entity,forecast_type:type}).then(unsubscribe=>{
+    if(this.source===source)this.unsubs.push(unsubscribe);
+    else return unsubscribe();
+   }).catch(()=>{
+    if(this.source!==source)return;
+    this.forecasts[type]=null;
+    this.render();
+   });
+  }
+  this.loadCalendar();
+ }
  async loadCalendar(){if(!this._hass||this.fetching)return;this.fetching=true;try{let start=new Date();start.setHours(0,0,0,0);let end=new Date(start);end.setDate(end.getDate()+60);this.events=await this._hass.callApi('GET',`calendars/${this.config.calendar}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);this.calendarStatus='';}catch(e){this.events=[];this.calendarStatus='Schedule unavailable';}finally{this.fetching=false;this.render()}}
  esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
  num(v){return v===null||v===undefined||!Number.isFinite(Number(v))?'—':Math.round(v)}
