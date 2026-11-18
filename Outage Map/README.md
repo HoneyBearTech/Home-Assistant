@@ -34,6 +34,18 @@ For manual installation, copy `custom_components/outage_watch` into your Home As
 
 If you already use Outage Watch, the integration domain and card type are unchanged. Keep your existing config entry to retain settings, service IDs, and history. Back up your configuration before replacing the manually installed component with HACS files.
 
+## Optional Speedtest graph and Run test button
+
+The Outage Map card includes the graph and button. The measurements come from Home Assistant's separate, built-in **Speedtest.net** integration. Outage Map does not run its own speed test.
+
+1. In **Settings → Devices & services → Add integration**, search for **Speedtest.net** and set it up. No separate HACS download is needed for Speedtest.net.
+2. Once its sensors have readings, refresh your Outage Map dashboard. The header automatically shows the available readings from `sensor.speedtest_download`, `sensor.speedtest_upload`, and `sensor.speedtest_ping`. Without those sensors the Speedtest section stays hidden.
+3. Administrators can select **Run test** to refresh the readings on demand. The 24-hour download and upload graph uses Home Assistant History and needs recorded sensor data.
+
+If you renamed the sensors, set `speedtest_download_entity`, `speedtest_upload_entity`, and `speedtest_ping_entity` in the card YAML. The catalog's **Ookla Speedtest** tile checks whether the public website responds and is separate from the bandwidth graph.
+
+[Home Assistant Speedtest.net setup](https://www.home-assistant.io/integrations/speedtestdotnet/)
+
 ## Theme screenshots
 
 All six screenshots use the same fictional service and Speedtest data. **Follow Appearance** is shown with an Amethyst palette and will look different with your active Home Assistant theme.
@@ -76,11 +88,10 @@ For a specific camera, plug, bridge, or thermostat, use a Home Assistant automat
 
 For each service, use the status and problem entities in automations. URL checks also create a response-time sensor. Notifications are off by default.
 
-## Appearance, mobile layout, and Speedtest
+## Appearance and mobile layout
 
 Use **Theme** to pick a style or follow the current Appearance palette. The selection is stored in each browser. Under **Theme → Mobile layout**, choose **One column** for larger tiles or **Two columns** for a compact grid. This setting is saved per browser and only applies to narrow dashboard views. **Follow Appearance** uses the optional Yanke Appearance resource when available and native Home Assistant theme colors otherwise.
 
-If the Speedtest.net integration exposes `sensor.speedtest_download`, `sensor.speedtest_upload`, and `sensor.speedtest_ping`, the header shows the available readings. Home Assistant History supplies the 24-hour chart. Administrators can run a test from the header. Custom entity IDs can be set with `speedtest_download_entity`, `speedtest_upload_entity`, and `speedtest_ping_entity` in the card config.
 
 Please report reproducible beta issues on [GitHub](https://github.com/yanke7/Home-Assistant/issues). Include your Home Assistant version and the relevant error or steps to reproduce. Remove tokens, addresses, and personal data from logs or screenshots.
 
