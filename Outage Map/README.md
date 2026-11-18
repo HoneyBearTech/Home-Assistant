@@ -12,6 +12,8 @@ If **Settings → Devices & services → Outage Map** shows an Outage Map entry,
 2. Open that dashboard and refresh the browser or reopen the Home Assistant app. Select **Edit dashboard → Add card**, then search for **Outage Map** and save it.
 3. Click **+ Add service inside the Outage Map card** and choose a provider. The **Add service** button on the **Devices & services** page starts integration setup again.
 
+**Seeing “Installed version” and “Up-to-date”?** That is the HACS/Marketplace update entity. Close it. If you added an entity tile to a dashboard, replace that tile with **Add card → Manual** using the configuration below. The dashboard card is a custom card and does not require selecting an entity.
+
 The integration doesn't create a sidebar dashboard automatically. If the card is missing from the picker, choose **Manual** and paste this into the card editor:
 
 ```yaml
