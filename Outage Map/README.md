@@ -50,6 +50,14 @@ All six screenshots use the same fictional service and Speedtest data. **Follow 
 | --- | --- |
 | [![Aqua Current](docs/screenshots/aqua-current.jpg)](docs/screenshots/aqua-current.jpg) | [![Follow Appearance shown with an Amethyst palette](docs/screenshots/follow-appearance.jpg)](docs/screenshots/follow-appearance.jpg) |
 
+## Mobile layout screenshots
+
+Choose **Theme → Mobile layout** to switch. **One column** is the default. Both screenshots use the same sample data at 390 px wide.
+
+| One column | Two columns |
+| --- | --- |
+| [![One column on mobile](docs/screenshots/mobile-one-column.jpg)](docs/screenshots/mobile-one-column.jpg) | [![Two columns on mobile](docs/screenshots/mobile-two-columns.jpg)](docs/screenshots/mobile-two-columns.jpg) |
+
 ## What the dashboard reports
 
 - **Feed + checks** combines a provider's public status feed and endpoint reachability. **Feed only** uses the provider's feed. **Checks only** tests a particular URL, so a successful request can miss an incident elsewhere in the service.
