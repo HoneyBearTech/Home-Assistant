@@ -53,6 +53,7 @@ All six screenshots use the same fictional service and Speedtest data. **Follow 
 ## What the dashboard reports
 
 - **Feed + checks** combines a provider's public status feed and endpoint reachability. **Feed only** uses the provider's feed. **Checks only** tests a particular URL, so a successful request can miss an incident elsewhere in the service.
+- With no tracked services, connectivity checks pause. With services tracked, Outage Map checks a primary connectivity endpoint and uses a fallback if the first is unavailable. Each installation schedules service checks at its own offsets. A provider can delay its next check using the Retry-After header. Repeated feed errors also increase the time between feed requests.
 - Confirmed provider incidents and failures observed only from your Home Assistant are identified separately. When both connectivity checks repeatedly fail, service states become unknown and notifications pause.
 - Latency charts and baselines use up to 24 hours of history stored locally. Gaps indicate missing or unsuccessful checks. Third parties receive normal HTTP requests from your Home Assistant. There is no telemetry.
 - The initial catalog includes Statuspage feeds and public URL checks. A site may block automated checks from your network. The Apple iCloud catalog entry pairs an iCloud.com check with Apple System Status. An existing iCloud.com monitor is upgraded in place. It follows Apple's iCloud components and ignores resolved incidents and unrelated Apple services.

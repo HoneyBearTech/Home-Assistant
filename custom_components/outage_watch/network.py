@@ -10,6 +10,7 @@ from yarl import URL
 
 from .apple import FEED_URL as APPLE_FEED_URL, parse_icloud
 from .google import FEED_URL as GOOGLE_FEED_URL, parse_workspace
+from .polling import retry_deadline
 
 class PublicResolver(AbstractResolver):
     def __init__(self):
@@ -56,13 +57,13 @@ async def probe(session, value):
                         method = "GET"
                         continue
                     if code in (401, 403, 429):
-                        return "blocked", None, code
+                        return "blocked", None, code, retry_deadline(response)
                     if 200 <= code < 300:
-                        return "ok", round((monotonic() - start) * 1000), code
-                    return "failed", None, code
+                        return "ok", round((monotonic() - start) * 1000), code, 0
+                    return "failed", None, code, retry_deadline(response)
     except (aiohttp.ClientError, TimeoutError, ValueError, OSError):
         pass
-    return "failed", None, None
+    return "failed", None, None, 0
 
 def parse_feed(payload):
     level = payload["status"]["indicator"]
@@ -86,19 +87,19 @@ async def feed_update(session, url, previous):
     try:
         async with session.get(url, headers=headers, allow_redirects=False) as response:
             if response.status == 304 and previous.get("data"):
-                return previous
+                return previous, 0
             if response.status != 200:
-                return None
+                return None, retry_deadline(response)
             body = bytearray()
             async for chunk in response.content.iter_chunked(16384):
                 body.extend(chunk)
                 if len(body) > 1_000_000:
-                    return None
+                    return None, 0
             if url == APPLE_FEED_URL:
                 data = parse_icloud(body)
             else:
                 payload = json.loads(body)
                 data = parse_workspace(payload) if url == GOOGLE_FEED_URL else parse_feed(payload)
-            return {"data": data, "etag": response.headers.get("ETag")}
+            return {"data": data, "etag": response.headers.get("ETag")}, 0
     except (aiohttp.ClientError, TimeoutError, ValueError, KeyError, TypeError, AttributeError):
-        return None
+        return None, 0
