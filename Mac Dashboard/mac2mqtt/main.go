@@ -108,42 +108,6 @@ func getHostname() string {
 	return firstPart
 }
 
-func getCommandOutput(name string, arg ...string) string {
-	cmd := exec.Command(name, arg...)
-
-	stdout, err := cmd.Output()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	stdoutStr := string(stdout)
-	stdoutStr = strings.TrimSuffix(stdoutStr, "\n")
-
-	return stdoutStr
-}
-
-func getMuteStatus() bool {
-	output := getCommandOutput("/usr/bin/osascript", "-e", "output muted of (get volume settings)")
-
-	b, err := strconv.ParseBool(output)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return b
-}
-
-func getCurrentVolume() int {
-	output := getCommandOutput("/usr/bin/osascript", "-e", "output volume of (get volume settings)")
-
-	i, err := strconv.Atoi(output)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return i
-}
-
 func runCommand(name string, arg ...string) {
 	cmd := exec.Command(name, arg...)
 
@@ -151,17 +115,6 @@ func runCommand(name string, arg ...string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// from 0 to 100
-func setVolume(i int) {
-	runCommand("/usr/bin/osascript", "-e", "set volume output volume "+strconv.Itoa(i))
-}
-
-// true - turn mute on
-// false - turn mute off
-func setMute(b bool) {
-	runCommand("/usr/bin/osascript", "-e", "set volume output muted "+strconv.FormatBool(b))
 }
 
 func commandSleep() {
@@ -275,36 +228,7 @@ func listen(client mqtt.Client, topic string) {
 			}
 		}
 
-		if msg.Topic() == getTopicPrefix()+"/command/volume" {
-
-			i, err := strconv.Atoi(string(msg.Payload()))
-			if err == nil && i >= 0 && i <= 100 {
-
-				setVolume(i)
-
-				updateVolume(client)
-				updateMute(client)
-
-			} else {
-				log.Println("Incorrect value")
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/mute" {
-
-			b, err := strconv.ParseBool(string(msg.Payload()))
-			if err == nil {
-				setMute(b)
-
-				updateVolume(client)
-				updateMute(client)
-
-			} else {
-				log.Println("Incorrect value")
-			}
-
-		}
+		systemAudio.handleAudioCommand(client, msg, runAudioScript)
 
 		dispatchPowerCommand(msg, powerActions)
 
@@ -314,16 +238,6 @@ func listen(client mqtt.Client, topic string) {
 	if token.Error() != nil {
 		log.Printf("Token error: %s\n", token.Error())
 	}
-}
-
-func updateVolume(client mqtt.Client) {
-	token := client.Publish(getTopicPrefix()+"/status/volume", 0, false, strconv.Itoa(getCurrentVolume()))
-	token.Wait()
-}
-
-func updateMute(client mqtt.Client) {
-	token := client.Publish(getTopicPrefix()+"/status/mute", 0, false, strconv.FormatBool(getMuteStatus()))
-	token.Wait()
 }
 
 var batteryPercent = regexp.MustCompile(`(^|[[:space:]])([0-9]{1,3})%(;|[[:space:]]|$)`)
@@ -370,8 +284,7 @@ func main() {
 		for {
 			select {
 			case _ = <-volumeTicker.C:
-				updateVolume(mqttClient)
-				updateMute(mqttClient)
+				systemAudio.updateAudio(mqttClient, runAudioScript)
 
 			case _ = <-batteryTicker.C:
 				updateBattery(mqttClient, readBattery)
