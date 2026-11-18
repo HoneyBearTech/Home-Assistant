@@ -20,7 +20,7 @@ The integration doesn't create a sidebar dashboard automatically. If the card is
 type: custom:outage-watch-card
 ```
 
-If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.0` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
+If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.1` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
 
 ## Install for beta testing
 
@@ -60,9 +60,9 @@ All six screenshots use the same fictional service and Speedtest data. **Follow 
 
 For each service, use the status and problem entities in automations. URL checks also create a response-time sensor. Notifications are off by default.
 
-## Appearance and Speedtest
+## Appearance, mobile layout, and Speedtest
 
-Use **Theme** to pick a style or follow the current Appearance palette. The selection is stored in each browser. **Follow Appearance** uses the optional Yanke Appearance resource when available and native Home Assistant theme colors otherwise.
+Use **Theme** to pick a style or follow the current Appearance palette. The selection is stored in each browser. Under **Theme → Mobile layout**, choose **One column** for larger tiles or **Two columns** for a compact grid. This setting is saved per browser and only applies to narrow dashboard views. **Follow Appearance** uses the optional Yanke Appearance resource when available and native Home Assistant theme colors otherwise.
 
 If the Speedtest.net integration exposes `sensor.speedtest_download`, `sensor.speedtest_upload`, and `sensor.speedtest_ping`, the header shows the available readings. Home Assistant History supplies the 24-hour chart. Administrators can run a test from the header. Custom entity IDs can be set with `speedtest_download_entity`, `speedtest_upload_entity`, and `speedtest_ping_entity` in the card config.
 

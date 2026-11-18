@@ -89,6 +89,7 @@ const THEMES = {
   appearance: ["Follow Appearance", "Use your shared palette, font and text size", "#26382d", "#a6c48a", "#f2f5eb"],
 };
 const THEME_KEY = "outage-watch.theme";
+const MOBILE_LAYOUT_KEY = "outage-watch.mobile-layout";
 const validTheme = (value) => Object.hasOwn(THEMES, value);
 
 class OutageWatchCard extends HTMLElement {
@@ -97,9 +98,11 @@ class OutageWatchCard extends HTMLElement {
     super();
     this.attachShadow({mode: "open"});
     this.theme = "steel";
+    this.mobileLayout = "single";
     try {
       const saved = localStorage.getItem(THEME_KEY);
       if (validTheme(saved)) this.theme = saved;
+      if (localStorage.getItem(MOBILE_LAYOUT_KEY) === "double") this.mobileLayout = "double";
     } catch { /* Theme selection still works without storage. */ }
     this.appearanceReady = () => this.syncAppearance();
     this.shadowRoot.addEventListener("click", (event) => this.handle(event));
@@ -270,6 +273,16 @@ class OutageWatchCard extends HTMLElement {
     }
     if (action === "close-themes") return this.shadowRoot.querySelector("dialog").close();
     if (action === "choose-theme") return this.chooseTheme(id);
+    if (action === "mobile-layout") {
+      if (id !== "single" && id !== "double") return;
+      this.mobileLayout = id;
+      try { localStorage.setItem(MOBILE_LAYOUT_KEY, id); } catch { /* Keep the in-memory choice. */ }
+      this.shadowRoot.querySelector(".shell").dataset.mobileLayout = id;
+      for (const choice of this.shadowRoot.querySelectorAll('[data-action="mobile-layout"]')) {
+        choice.setAttribute("aria-pressed", String(choice.dataset.id === id));
+      }
+      return;
+    }
     if (action === "speedtest") return this.runSpeedtest();
     const service = this.activeService;
     this.error = "";
@@ -632,7 +645,28 @@ class OutageWatchCard extends HTMLElement {
       }
       .shell[data-theme="appearance"] .header-controls button {font-size:calc(12px * var(--yanke-scale,1))}
       .shell[data-theme="appearance"] h1 {font-size:calc(clamp(28px,3.4cqw,44px) * var(--yanke-scale,1))}
-    </style><main class="shell" data-theme="${this.theme}">
+      .layout-options {border:0;padding:0;margin:16px 0 0}
+      .layout-options legend {font-weight:700;margin-bottom:6px}
+      .layout-options button {margin:0 5px 0 0}
+      .layout-options button[aria-pressed="true"] {outline:2px solid var(--blue);outline-offset:-2px}
+      .layout-options p {margin-top:6px}
+      @container (max-width:500px) {
+        .shell[data-mobile-layout="double"] .tiles {
+          grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+        }
+        .shell[data-mobile-layout="double"] .tile {padding:9px 7px;gap:6px;min-height:0}
+        .shell[data-mobile-layout="double"] .tile .identity {font-size:13px;align-items:flex-start;gap:4px}
+        .shell[data-mobile-layout="double"] .tile ha-icon {--mdc-icon-size:15px}
+        .shell[data-mobile-layout="double"] .tile-meta {display:grid;justify-content:stretch}
+        .shell[data-mobile-layout="double"] .tile .pill {
+          justify-self:start;max-width:100%;white-space:normal;font-size:10px;padding:3px 5px;
+        }
+        .shell[data-mobile-layout="double"] .tile .muted,
+        .shell[data-mobile-layout="double"] .no-chart {font-size:11px}
+        .shell[data-mobile-layout="double"] .spark {gap:4px;min-height:22px}
+        .shell[data-mobile-layout="double"] .spark strong {font-size:11px}
+      }
+    </style><main class="shell" data-theme="${this.theme}" data-mobile-layout="${this.mobileLayout}">
       <dialog class="theme-dialog" aria-labelledby="ow-theme-title">
         <div class="row"><h2 id="ow-theme-title">Dashboard theme</h2><button type="button" data-action="close-themes" aria-label="Close theme picker">×</button></div>
         <div class="theme-grid">${Object.entries(THEMES).map(([id,[name,description,bg,edge,accent]]) => `
@@ -640,6 +674,12 @@ class OutageWatchCard extends HTMLElement {
             <span class="theme-swatch" aria-hidden="true" style="--swatch-bg:${bg};--swatch-edge:${edge};--swatch-accent:${accent}"></span>
             <span><strong>${name}</strong><small>${description}</small></span>
           </button>`).join("")}</div>
+        <fieldset class="layout-options">
+          <legend>Mobile layout</legend>
+          ${[["single","One column"],["double","Two columns"]].map(([id,name]) =>
+            `<button type="button" data-action="mobile-layout" data-id="${id}" aria-pressed="${this.mobileLayout === id}">${name}</button>`).join("")}
+          <p class="muted">Applies on narrow screens and is saved in this browser.</p>
+        </fieldset>
       </dialog>
       <header><div><h1>Outage Map</h1><p>Your services, at a glance.</p></div><div class="header-controls">${connection}${this.speedHeader()}<button type="button" class="theme-open" data-action="themes" aria-haspopup="dialog">Theme</button>${can_manage ? '<button class="primary" data-action="add">+ Add service</button>' : ""}</div></header>
       ${this.loadError ? `<p class="notice" role="status">${escape(this.loadError)}</p>` : ""}
