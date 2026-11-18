@@ -24,9 +24,9 @@ If it says **Custom element doesn't exist: outage-watch-card** after refreshing,
 
 ## Install for beta testing
 
-[![Open Outage Map in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=yanke7&repository=Home-Assistant&category=integration)
+[![Open Outage Map in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=HoneyBearTech&repository=Home-Assistant&category=integration)
 
-1. Click the button to open Outage Map in HACS. If the button cannot reach your instance, open **Custom repositories** in HACS and add `https://github.com/yanke7/Home-Assistant` as an **Integration**.
+1. Click the button to open Outage Map in HACS. If the button cannot reach your instance, open **Custom repositories** in HACS and add `https://github.com/HoneyBearTech/Home-Assistant` as an **Integration**.
 2. Download **Outage Map**, then restart Home Assistant.
 3. In **Settings → Devices & services**, add **Outage Map** once if it isn't already listed. Then follow the dashboard steps above.
 
