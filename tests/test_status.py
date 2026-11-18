@@ -33,3 +33,31 @@ class StatusTests(unittest.TestCase):
 
     def test_no_fresh_feed_or_probe_is_unknown(self):
         self.assertEqual(self.evaluate([])[:2], ("unknown", "no_data"))
+
+    def test_continuous_failure_through_maximum_backoff(self):
+        interval = 300
+        freshness = 5 * interval
+        samples = []
+        # After three failures the scheduler doubles the delay, up to four intervals.
+        for minute in (0, 5, 10, 20, 40, 60, 80):
+            now = minute * 60
+            samples.append((now, "failed", None))
+            if len(samples) >= 3:
+                for offset in (0, interval * (2 if minute == 10 else 4) - 1):
+                    with self.subTest(minute=minute, offset=offset):
+                        self.assertEqual(summarize(samples, {}, True, now + offset, freshness)[:2],
+                                         ("outage", "unreachable"))
+
+        self.assertEqual(summarize(samples, {}, True, now + freshness, freshness)[:2],
+                         ("unknown", "no_data"))
+        self.assertEqual(summarize(samples, {"level": "major"}, True, now, freshness)[:2],
+                         ("outage", "provider_outage"))
+        self.assertEqual(summarize(samples, {}, True, now, freshness, run_start=now)[:2],
+                         ("unknown", "failed"))
+        samples.append((now + 4 * interval, "ok", 100))
+        self.assertEqual(summarize(samples, {}, True, samples[-1][0], freshness)[:2],
+                         ("operational", "ok"))
+
+    def test_gap_in_observations_breaks_failure_streak(self):
+        samples = [(0, "failed", None), (300, "failed", None), (3000, "failed", None)]
+        self.assertEqual(summarize(samples, {}, True, 3000, 1500)[:2], ("unknown", "failed"))
