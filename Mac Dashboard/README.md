@@ -22,9 +22,24 @@ All Mac names and device identifiers are placeholders. No MQTT credentials, Home
 3. Replace `REPLACE_WITH_MAC_DEVICE_ID` in the device-settings link. Adjust the Home and Appearance navigation links for your dashboards.
 4. Run `python3 build.py` from this folder. It embeds the illustration in `mac-studio.bundle.js`.
 5. Copy the bundle to Home Assistant's `config/www/`, then add `/local/mac-studio.bundle.js` as a JavaScript module under dashboard Resources.
-6. Create a dashboard using the `dashboard.json` configuration, or add a panel view with a `custom:yanke-mac-studio` card. Reload the browser after resource updates.
+6. Create a dashboard using the `dashboard.json` configuration, or add a panel view with a `custom:yanke-mac-dashboard` card. Reload the browser after resource updates.
 
 The card uses your existing authenticated Home Assistant frontend session. It does not contain a token. Three.js and several app logos load from public CDNs; the workstation and Prime Video artwork are embedded. Reduced-motion preferences are respected. This is an animated illustration rather than a hardware model.
+
+Use `custom:yanke-mac-dashboard` for this dashboard. Keep the Mac bundle at
+`/local/mac-studio.bundle.js` and the Office bundle at
+`/local/office/mac-studio.bundle.js`. Existing single-bundle installations
+can continue using `custom:yanke-mac-studio`. Before adding a second bundle,
+change the existing card type to its dashboard-specific name and refresh the page.
+
+Each card accepts an optional `entities` mapping in its dashboard configuration.
+For example, `"entities": {"volume": "number.desk_mac_volume", "light": "light.desk"}`
+routes volume and room light readings and commands to those entities. Other
+entries keep this dashboard’s defaults. Supported keys are `connection`,
+`battery`, `volume`, `mute`, `wake`, `display`, `sleep`, `shutdown`,
+`officeCameras`, `mirrorStart`, `mirrorStop`, `mirrorResult`, `player`,
+`remote`, `light`, `led`, `temperature`, `black`, `cyan`, `magenta`
+and `yellow`. Include every device you want to change when adapting an installation.
 
 ## Mac background service and AirPlay helper
 
