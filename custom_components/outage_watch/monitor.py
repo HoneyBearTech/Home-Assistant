@@ -221,6 +221,7 @@ class Monitor:
             "services": [{
                 **{key: service.get(key) for key in ("id", "name", "official", "crowd", "icon", "alerts", "feed_scope")},
                 **self.state(service),
+                "scan_interval": self.interval,
                 "history": [row for row in service["samples"] if row[0] > time() - DAY],
             } for service in self.services.values()],
         }
