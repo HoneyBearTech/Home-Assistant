@@ -1,0 +1,49 @@
+name: Dashboard checks
+
+on:
+  push:
+    paths: &dashboard_paths
+      - 'Astra Dashboard/**'
+      - 'Fable Sun Moon/**'
+      - 'Main Dashboard card/**'
+      - 'Network/**'
+      - 'Mac Dashboard/**'
+      - 'Office set up/**'
+      - 'Security/**'
+      - 'Themes/**'
+      - 'Weather/**'
+      - '.github/workflows/dashboards.yml'
+  pull_request:
+    paths: *dashboard_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run dashboard checks
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for dir in "Astra Dashboard" "Fable Sun Moon" "Mac Dashboard" "Main Dashboard card" \
+                     Network "Office set up" Security Themes Weather; do
+            for script in "$dir"/verify*.cjs; do
+              echo "Running $script"
+              node "$script"
+            done
+          done
+      - name: Check packaged dashboards match their sources
+        run: |
+          for dir in "Mac Dashboard" "Office set up"; do
+            python3 "$dir/build.py"
+            git diff --exit-code -- "$dir/mac-studio.bundle.js"
+          done
