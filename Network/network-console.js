@@ -41,28 +41,84 @@ class NetworkConsole extends HTMLElement {
   return [...ids].map(id=>{const r=this.reg[id]||{},s=h.states[id],a=s?.attributes||{},mac=String(a.mac||r.unique_id||'').toLowerCase();const base=a.friendly_name&&!r.name?a.friendly_name:(r.original_name||h.devices?.[r.device_id]?.name||id.split('.')[1].replace(/_/g,' '));let vendor=String(base).replace(/\s*([0-9A-F]{2}[:_ ]){2,5}[0-9A-F]{2}$/i,'').trim();const priv=/^.[26ae]/i.test(mac);if(!vendor||/^nmap tracker$/i.test(vendor))vendor=priv?'Private Wi-Fi address':'Unknown maker';
    const other=(macOwner[mac]||[]).find(d=>d.id!==r.device_id&&(d.name_by_user||d.name));const suggested=other?(other.name_by_user||other.name):null;const custom=r.name||(h.entities?.[id]?.platform==='nmap_tracker'&&!this.regOk&&a.friendly_name!==base?a.friendly_name:null);
    if(a.ip)this.scan.lastIp[id]=a.ip;const ip=a.ip||this.scan.lastIp[id]||'';
-   const status=r.disabled_by?'pending':s?.state==='home'?'online':s?.state==='not_home'?'offline':'unknown';
+   const status=r.disabled_by==='integration'?'pending':r.disabled_by?'disabled':s?.state==='home'?'online':s?.state==='not_home'?'offline':'unknown';
    return {id,mac,ip,vendor,name:custom||suggested||vendor+(mac?' · '+mac.slice(-5).toUpperCase():''),custom:!!custom,suggested:!custom&&!!suggested,named:!!(custom||suggested),status,changed:s?new Date(s.last_changed).getTime():0,seen:a.last_time_reachable?new Date(a.last_time_reachable).getTime():0};}).sort((a,b)=>this.ipNum(a.ip)-this.ipNum(b.ip)||a.name.localeCompare(b.name));}
  ipNum(ip){const p=String(ip).split('.').map(Number);return p.length===4&&p.every(Number.isFinite)?((p[0]*256+p[1])*256+p[2])*256+p[3]:Infinity;}
  ago(t){if(!t)return '';const m=Math.max(0,Math.round((Date.now()-t)/60000));return m<1?'just now':m<60?m+'m':m<1440?Math.floor(m/60)+'h'+(m%60?' '+m%60+'m':''):Math.floor(m/1440)+'d '+Math.floor(m%1440/60)+'h';}
  clock(t){const d=new Date(t),today=new Date().toDateString()===d.toDateString();return d.toLocaleString(undefined,today?{hour:'numeric',minute:'2-digit'}:{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
  renderScan(force){if(!this.root||!this._hass)return;const list=this.root.getElementById('scanlist');if(!list)return;if(this.scan.editing&&!force)return;const model=this.scanModel(),minute=Math.floor(Date.now()/60000);const sig=JSON.stringify([model.map(d=>[d.id,d.status,d.ip,d.name,d.changed]),this.scan.tab,this.scan.filter,this.scan.q,this.scan.editing,this.scan.events.length,minute,this.regOk]);if(sig===this.scan.sig&&!force)return;this.scan.sig=sig;this.scan.model=model;
-  const tracked=model.filter(d=>d.status!=='pending'),pend=model.filter(d=>d.status==='pending'),count={online:tracked.filter(d=>d.status==='online').length,offline:tracked.filter(d=>d.status==='offline').length,unnamed:model.filter(d=>!d.custom).length};
+  const tracked=model.filter(d=>d.status!=='pending'&&d.status!=='disabled'),pend=model.filter(d=>d.status==='pending'),count={online:tracked.filter(d=>d.status==='online').length,offline:tracked.filter(d=>d.status==='offline').length,unnamed:model.filter(d=>!d.custom).length};
   for(const k in count)this.root.getElementById('n_'+k).textContent=count[k];this.root.querySelectorAll('.stat').forEach(b=>b.classList.toggle('on',b.dataset.filter===this.scan.filter));this.root.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===this.scan.tab));
   this.root.getElementById('pending').innerHTML=pend.length?`<div class="pending"><span><b>${pend.length}</b> new device${pend.length>1?'s':''} found, not tracked yet</span><button data-track="all">Track all</button></div>`:'';
   const latest=Math.max(0,...tracked.map(d=>d.seen));this.root.getElementById('scanfoot').textContent=model.length?`${tracked.length} tracked · last sweep ${latest?this.clock(latest):'pending'}`:'';this.root.getElementById('scantag').textContent=(this.config.scan_subnet||'Local network')+' · LIVE';
-  if(this.scan.tab==='activity'){const names=Object.fromEntries(model.map(d=>[d.id,d.name]));list.innerHTML=this.scan.events.length?this.scan.events.map(e=>`<div class="ev ${e.type}"><i>${e.type==='drop'?'Dropped':'Joined'}</i><b>${esc(names[e.id]||e.id)}</b><span class="t">${esc(this.clock(e.t))} · ${esc(this.ago(e.t))} ago</span></div>`).join(''):`<div class="none">No devices joined or dropped off in the last 24 hours.<br>Changes appear here as the scanner sees them.</div>`;return;}
+  if(this.scan.tab==='activity'){list.innerHTML=this.activityMarkup(tracked);return;}
   const q=this.scan.q,f=this.scan.filter;const rows=model.filter(d=>(f==='all'||(f==='unnamed'?!d.custom:d.status===f))&&(!q||(d.name+' '+d.ip+' '+d.mac+' '+d.vendor).toLowerCase().includes(q)));rows.sort((a,b)=>(a.status==='pending')-(b.status==='pending')||(a.status!=='online')-(b.status!=='online')||0);
   if(!model.length){list.innerHTML=`<div class="none">${this.regOk===false?'Device list could not be read.':'The scanner has not reported any devices yet.<br>The first sweep takes about a minute.'}</div>`;return;}
-  list.innerHTML=rows.length?rows.map(d=>{const cls=d.status==='pending'?'pendingrow':d.status;const when=d.status==='online'?`Online ${this.ago(d.changed)}`:d.status==='offline'?`Dropped ${this.ago(d.changed)} ago`:d.status==='pending'?'Not tracked':'No reading';const sub=`${esc(d.vendor)} · ${esc(d.mac.toUpperCase())}${d.status==='offline'&&d.seen?' · last seen '+esc(this.clock(d.seen)):''}`;
+  list.innerHTML=rows.length?rows.map(d=>{const cls=d.status==='pending'?'pendingrow':d.status;const when=d.status==='online'?`Online ${this.ago(d.changed)}`:d.status==='offline'?`Dropped ${this.ago(d.changed)} ago`:d.status==='pending'?'Not tracked':d.status==='disabled'?'Disabled in Home Assistant':'No reading';const sub=`${esc(d.vendor)} · ${esc(d.mac.toUpperCase())}${d.status==='offline'&&d.seen?' · last seen '+esc(this.clock(d.seen)):''}`;
    if(this.scan.editing===d.id)return `<div class="row ${cls}"><span class="sd"></span><input class="rename" data-id="${esc(d.id)}" value="${esc(d.custom||d.suggested?d.name:'')}" placeholder="Name this device (${esc(d.ip||d.vendor)})" maxlength="60" aria-label="Device name"><button class="rowbtn" data-save="${esc(d.id)}">Save</button><button class="rowbtn" data-cancel="1">Cancel</button></div>`;
-   return `<div class="row ${cls}"><span class="sd" title="${esc(d.status)}"></span><button class="who" ${d.status==='pending'?'':`data-entity="${esc(d.id)}"`}><span class="nm">${esc(d.name)}${d.custom?'':d.suggested?'<em>suggested</em>':'<em>unnamed</em>'}</span><span class="sub2">${sub}</span></button><div class="addr">${esc(d.ip||'—')}<small>${esc(when)}</small></div>${d.status==='pending'?`<button class="rowbtn" data-track="${esc(d.id)}">Track</button>`:`<button class="edit" data-edit="${esc(d.id)}" title="Assign a name" aria-label="Assign a name to ${esc(d.name)}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>`}</div>`;}).join(''):`<div class="none">No devices match this filter.</div>`;
+   return `<div class="row ${cls}"><span class="sd" title="${esc(d.status)}"></span><button class="who" ${['pending','disabled'].includes(d.status)?'':`data-entity="${esc(d.id)}"`}><span class="nm">${esc(d.name)}${d.custom?'':d.suggested?'<em>suggested</em>':'<em>unnamed</em>'}</span><span class="sub2">${sub}</span></button><div class="addr">${esc(d.ip||'—')}<small>${esc(when)}</small></div>${d.status==='disabled'?'':d.status==='pending'?`<button class="rowbtn" data-track="${esc(d.id)}">Track</button>`:`<button class="edit" data-edit="${esc(d.id)}" title="Assign a name" aria-label="Assign a name to ${esc(d.name)}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>`}</div>`;}).join(''):`<div class="none">No devices match this filter.</div>`;
   if(this.scan.editing){const inp=list.querySelector('.rename');if(inp&&this.root.activeElement!==inp){inp.focus();inp.select();}}}
  scanClick(e){const t=e.target.closest('[data-tab],[data-filter],[data-edit],[data-save],[data-cancel],[data-track]');if(!t)return e.target.classList?.contains('rename');const d=t.dataset;if(d.tab){this.scan.tab=d.tab;if(d.tab==='activity')this.loadActivity();}else if(d.filter){this.scan.filter=this.scan.filter===d.filter?'all':d.filter;this.scan.tab='devices';}else if(d.edit){this.scan.editing=d.edit;}else if(d.cancel){this.scan.editing=null;}else if(d.save){this.saveName(d.save,this.root.querySelector('.rename')?.value??'');return true;}else if(d.track){this.track(d.track);return true;}this.renderScan(true);return true;}
  note(msg){const el=this.root.getElementById('scanerr');el.textContent=msg;clearTimeout(this._note);if(msg)this._note=setTimeout(()=>{el.textContent='';},8000);}
  async saveName(id,value){const name=String(value).trim()||null;try{const res=await this._hass.callWS({type:'config/entity_registry/update',entity_id:id,name});this.reg[id]={...(this.reg[id]||{}),...(res.entity_entry||{}),name};this.note(name?'Name saved':'Name cleared');}catch(err){this.note('Could not save name: '+(err?.message||'admin access needed'));}this.scan.editing=null;this.renderScan(true);}
- async track(which){const ids=which==='all'?this.scan.model.filter(d=>d.status==='pending').map(d=>d.id):[which];try{for(const id of ids){const res=await this._hass.callWS({type:'config/entity_registry/update',entity_id:id,disabled_by:null});this.reg[id]={...(this.reg[id]||{}),...(res.entity_entry||{}),disabled_by:null};}this.note('Tracking starts in about 30 seconds');}catch(err){this.note('Could not start tracking: '+(err?.message||'admin access needed'));}this.renderScan(true);}
- async loadActivity(){if(this.actLoading||!this._hass)return;const ids=Object.keys(this.reg).filter(id=>!this.reg[id].disabled_by);if(!ids.length)return;this.actLoading=true;const end=Date.now(),start=end-86400000;try{const rows=await this._hass.callApi('GET',`history/period/${new Date(start).toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${new Date(end).toISOString()}&minimal_response&no_attributes`);const ev=[];for(const r of rows){const id=r[0]?.entity_id;let prev=null;r.forEach((p,i)=>{if(p.state!=='home'&&p.state!=='not_home')return;const t=new Date(p.last_changed||p.last_updated).getTime();if(prev&&prev!==p.state)ev.push({id,t,type:p.state==='home'?'join':'drop'});else if(!prev&&i>0&&p.state==='home'&&t>start+60000)ev.push({id,t,type:'join'});prev=p.state;});}this.scan.events=ev.sort((a,b)=>b.t-a.t).slice(0,60);}catch(e){}finally{this.actLoading=false;}this.renderScan(this.scan.tab==='activity'&&!this.scan.editing);}
+ async track(which){
+  await this.loadRegistry();
+  if(!this.regOk){this.note('Could not verify which devices are eligible for tracking.');return;}
+  const ids=Object.keys(this.reg).filter(id=>this.reg[id].disabled_by==='integration'&&(which==='all'||which===id));
+  if(!ids.length){this.note('No new devices to track');return;}
+  try{
+   for(const id of ids){
+    const res=await this._hass.callWS({type:'config/entity_registry/update',entity_id:id,disabled_by:null});
+    this.reg[id]={...this.reg[id],...res.entity_entry,disabled_by:null};
+   }
+   this.note('Tracking starts in about 30 seconds');
+  }catch(err){this.note('Could not start tracking: '+(err?.message||'admin access needed'));}
+  this.renderScan(true);
+ }
+ activityMarkup(tracked){
+  const names=new Map(tracked.map(device=>[device.id,device.name]));
+  const cutoff=Date.now()-86400000;
+  this.scan.events=this.scan.events.filter(event=>event.t>cutoff&&names.has(event.id));
+  const rows=this.scan.events.map(e=>`<div class="ev ${e.type}"><i>${e.type==='drop'?'Dropped':'Joined'}</i><b>${esc(names.get(e.id))}</b><span class="t">${esc(this.clock(e.t))} · ${esc(this.ago(e.t))} ago</span></div>`).join('');
+  if(this.activityFailed||this.regOk===false){
+   const last=this.activityUpdated?` Last successful refresh: ${esc(this.clock(this.activityUpdated))}.`:'';
+   return `<div class="none">Activity history unavailable.${last}</div>`+rows;
+  }
+  if(!this.activityUpdated)return '<div class="none">Loading activity history…</div>';
+  return rows||'<div class="none">No devices joined or dropped off in the last 24 hours.</div>';
+ }
+ async loadActivity(){
+  if(!this._hass||!this.regOk)return;
+  const ids=Object.keys(this.reg).filter(id=>!this.reg[id].disabled_by);
+  if(!ids.length){
+   this.activityRequest=null;
+   this.scan.events=[];this.activityFailed=false;this.activityUpdated=Date.now();this.renderScan(true);return;
+  }
+  const key=JSON.stringify(ids.sort());
+  if(this.activityRequest?.key===key)return;
+  const request=this.activityRequest={key};
+  const end=Date.now(),start=end-86400000;
+  try{
+   const rows=await this._hass.callApi('GET',`history/period/${new Date(start).toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${new Date(end).toISOString()}&minimal_response&no_attributes`);
+   if(this.activityRequest!==request)return;
+   const events=[];
+   for(const series of rows){
+    const id=series[0]?.entity_id;
+    if(!this.reg[id]||this.reg[id].disabled_by)continue;
+    let previous=null;
+    series.forEach((point,index)=>{
+     if(point.state!=='home'&&point.state!=='not_home')return;
+     const time=new Date(point.last_changed||point.last_updated).getTime();
+     const changed=previous?previous!==point.state:index>0&&point.state==='home'&&time>start+60000;
+     if(changed&&time>start&&time<=end)events.push({id,t:time,type:point.state==='home'?'join':'drop'});
+     previous=point.state;
+    });
+   }
+   this.scan.events=events.sort((a,b)=>b.t-a.t).slice(0,60);
+   this.activityUpdated=Date.now();this.activityFailed=false;
+  }catch(err){if(this.activityRequest===request)this.activityFailed=true;}
+  finally{if(this.activityRequest===request){this.activityRequest=null;this.renderScan(this.scan.tab==='activity'&&!this.scan.editing);}}
+ }
  async loadDetails(){if(this.map)return;try{const helpers=await window.loadCardHelpers();this.map=helpers.createCardElement({type:'map',entities:['device_tracker.kris','device_tracker.mac_book'],theme_mode:'dark',aspect_ratio:'16:9'});this.storage=helpers.createCardElement({type:'history-graph',entities:[{entity:'sensor.hangmytv_storage',name:'Storage available'},{entity:'sensor.hangmytv_battery_level',name:'Phone battery'},{entity:'sensor.mac_book_internal_battery_level',name:'MacBook battery'}],hours_to_show:24});this.map.hass=this._hass;this.storage.hass=this._hass;this.root.getElementById('map').append(this.map);this.root.getElementById('storage').append(this.storage);}catch(e){this.root.getElementById('map').textContent='Details could not load. Use the original dashboard link below.';}}
 }
 if(!customElements.get('yanke-network-console'))customElements.define('yanke-network-console',NetworkConsole);
