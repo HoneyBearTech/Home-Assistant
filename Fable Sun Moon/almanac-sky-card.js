@@ -114,13 +114,13 @@ h1{font-size:clamp(22px,2.3vw,34px);max-width:none;margin:8px 0 4px}
 `;
 
 class AlmanacSky extends HTMLElement {
-  constructor() { super(); this.attachShadow({ mode: 'open' }); this.cache = new Map(); this.scrub = null; this.W = 0; }
+  constructor() { super(); this.attachShadow({ mode: 'open' }); this.cache = new Map(); this.midnights = new Map(); this.scrub = null; this.W = 0; }
   setConfig(c) { this.config = c || {}; }
   getCardSize() { return 14; }
   set hass(h) {
     const key = [h.config.latitude, h.config.longitude, h.config.time_zone, h.locale?.language, h.locale?.time_format].join();
     this._hass = h;
-    if (key !== this.key) { this.key = key; this.cache.clear(); this.cycleKey = null; this.init(); }
+    if (key !== this.key) { this.key = key; this.cache.clear(); this.midnights.clear(); this.scrub = null; this.cycleKey = null; this.init(); }
   }
   connectedCallback() { this.timer = setInterval(() => { if (this.scrub == null) this.draw(); }, 30000); if (this.key) this.init(); }
   disconnectedCallback() { clearInterval(this.timer); this.ro?.disconnect(); }
@@ -133,7 +133,7 @@ class AlmanacSky extends HTMLElement {
     this.fT = F({ hour: 'numeric', minute: '2-digit', hour12: h12 }); this.fH = F({ hour: 'numeric', hour12: h12 });
     this.fD = F({ weekday: 'long', month: 'long', day: 'numeric' }); this.fS = F({ weekday: 'short', month: 'short', day: 'numeric' });
     this.fN = F({ day: 'numeric' }); this.fM = F({ month: 'short', day: 'numeric' });
-    this.fP = new Intl.DateTimeFormat('en-US', { timeZone: this.tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+    this.fP = new Intl.DateTimeFormat('en-US', { timeZone: this.tz, year: 'numeric', month: 'numeric', day: 'numeric' });
     let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
     const stars = Array.from({ length: 70 }, () => `<i style="left:${(rnd() * 100).toFixed(1)}%;top:${(rnd() * 70).toFixed(1)}%;opacity:${(0.25 + rnd() * 0.7).toFixed(2)}${rnd() > 0.8 ? ';width:3px;height:3px' : ''}"></i>`).join('');
     const ns = this.lat >= 0 ? 'N' : 'S', ew = this.lon >= 0 ? 'E' : 'W';
@@ -148,14 +148,14 @@ class AlmanacSky extends HTMLElement {
     const $ = id => this.shadowRoot.getElementById(id);
     $('home').addEventListener('click', e => { e.preventDefault(); history.pushState(null, '', e.currentTarget.getAttribute('href')); window.dispatchEvent(new CustomEvent('location-changed')); });
     const chart = $('chart');
-    const seek = e => { const r = chart.getBoundingClientRect(), k = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); this.scrub = this.dayStart(Date.now()) + Math.round(k * 288) * 3e5; this.draw(); };
+    const seek = e => { const r = chart.getBoundingClientRect(), k = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); const start = this.dayStart(Date.now()), end = this.nextStart(start); this.scrub = Math.min(end, start + Math.round(k * (end - start) / 3e5) * 3e5); this.draw(); };
     chart.addEventListener('pointerdown', e => { chart.setPointerCapture(e.pointerId); this.drag = true; seek(e); });
     chart.addEventListener('pointermove', e => { if (this.drag) seek(e); });
     const end = () => { this.drag = false; };
     chart.addEventListener('pointerup', end); chart.addEventListener('pointercancel', end);
     chart.addEventListener('keydown', e => {
       const d0 = this.dayStart(Date.now()), step = { ArrowLeft: -6e5, ArrowRight: 6e5, PageDown: -36e5, PageUp: 36e5 }[e.key];
-      if (step) { e.preventDefault(); this.scrub = Math.min(d0 + DAY, Math.max(d0, (this.scrub ?? Math.round(Date.now() / 6e5) * 6e5) + step)); this.draw(); }
+      if (step) { e.preventDefault(); this.scrub = Math.min(this.nextStart(d0), Math.max(d0, (this.scrub ?? Math.round(Date.now() / 6e5) * 6e5) + step)); this.draw(); }
       else if (e.key === 'Escape' && this.scrub != null) { this.scrub = null; this.draw(); }
     });
     $('live').addEventListener('click', e => { if (e.target.closest('button')) { this.scrub = null; this.draw(); chart.focus(); } });
@@ -164,36 +164,50 @@ class AlmanacSky extends HTMLElement {
     this.ro.observe(chart);
   }
 
-  dayStart(t) {
-    const p = {}; for (const x of this.fP.formatToParts(new Date(t))) p[x.type] = +x.value;
-    const off = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(t / 1000) * 1000;
-    return Math.floor((t + off) / DAY) * DAY - off;
+  civilDate(t) {
+    const p = {};
+    for (const part of this.fP.formatToParts(t)) p[part.type] = Number(part.value);
+    return Date.UTC(p.year, p.month - 1, p.day);
   }
+  startOfDate(date) {
+    if (this.midnights.has(date)) return this.midnights.get(date);
+    // Find the first instant of the local date, even if the clocks skip midnight.
+    let lo = date - DAY, hi = date + DAY;
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (this.civilDate(mid) < date) lo = mid; else hi = mid;
+    }
+    if (this.midnights.size >= 64) this.midnights.delete(this.midnights.keys().next().value);
+    this.midnights.set(date, hi);
+    return hi;
+  }
+  dayStart(t) { return this.startOfDate(this.civilDate(t)); }
+  nextStart(t) { return this.startOfDate(this.civilDate(t) + DAY); }
   day(d0) {
     let d = this.cache.get(d0); if (d) return d;
-    const n = DAY / STEP, t = [], sa = [], ma = [], sz = [], mz = [];
-    for (let i = 0; i <= n; i++) { const x = d0 + i * STEP, s = sunAt(x, this.lat, this.lon), m = moonAt(x, this.lat, this.lon); t.push(x); sa.push(s.alt); sz.push(s.az); ma.push(m.alt); mz.push(m.az); }
-    const cross = (a, thr) => { const o = []; for (let i = 1; i < a.length; i++) { const p = a[i - 1] - thr, q = a[i] - thr; if ((p < 0) !== (q < 0)) o.push({ t: t[i - 1] + STEP * p / (p - q), up: q >= 0 }); } return o; };
+    const end = this.nextStart(d0), n = Math.ceil((end - d0) / STEP), t = [], sa = [], ma = [], sz = [], mz = [];
+    for (let i = 0; i <= n; i++) { const x = Math.min(end, d0 + i * STEP), s = sunAt(x, this.lat, this.lon), m = moonAt(x, this.lat, this.lon); t.push(x); sa.push(s.alt); sz.push(s.az); ma.push(m.alt); mz.push(m.az); }
+    const cross = (a, thr) => { const o = []; for (let i = 1; i < a.length; i++) { const p = a[i - 1] - thr, q = a[i] - thr; if ((p < 0) !== (q < 0)) o.push({ t: t[i - 1] + (t[i] - t[i - 1]) * p / (p - q), up: q >= 0 }); } return o; };
     const first = (l, up) => l.find(e => e.up === up)?.t, last = (l, up) => [...l].reverse().find(e => e.up === up)?.t;
     const h = cross(sa, -0.833), c = cross(sa, -6), g = cross(sa, 6);
     let ni = 0; sa.forEach((v, i) => { if (v > sa[ni]) ni = i; });
-    d = { d0, t, sa, ma, sz, mz, rise: first(h, true), set: last(h, false), dawn: first(c, true), dusk: last(c, false), golden: last(g, false), noon: t[ni], noonAlt: sa[ni], moonEv: cross(ma, -0.833) };
+    d = { d0, end, t, sa, ma, sz, mz, rise: first(h, true), set: last(h, false), dawn: first(c, true), dusk: last(c, false), golden: last(g, false), noon: t[ni], noonAlt: sa[ni], moonEv: cross(ma, -0.833) };
     d.len = d.rise && d.set ? d.set - d.rise : null;
     if (this.cache.size > 6) this.cache.delete(this.cache.keys().next().value);
     this.cache.set(d0, d); return d;
   }
   dur(ms) { const m = Math.round(Math.abs(ms) / 6e4), h = Math.floor(m / 60); return h ? `${h} h ${m % 60} m` : `${m} m`; }
   tm(t) { return t ? this.fT.format(t) : '—'; }
-  dayTag(t, d0) { const n = Math.round((this.dayStart(t) - d0) / DAY); return n === 1 ? 'tomorrow' : n > 1 ? this.fS.format(t) : ''; }
+  dayTag(t, d0) { const n = (this.civilDate(t) - this.civilDate(d0)) / DAY; return n === 1 ? 'tomorrow' : n > 1 ? this.fS.format(t) : ''; }
 
   draw() {
     const root = this.shadowRoot, $ = id => root.getElementById(id); if (!$('plot')) return;
     const now = Date.now(), T = this.scrub ?? now, d0 = this.dayStart(now), D = this.day(d0);
     const s = sunAt(T, this.lat, this.lon), m = moonAt(T, this.lat, this.lon), il = illum(T), name = phaseName(il.phase);
     root.querySelector('.shell').dataset.sky = s.alt > 6 ? 'day' : s.alt > -4 ? 'golden' : s.alt > -12 ? 'twilight' : 'night';
-    const mEv = [...D.moonEv, ...this.day(d0 + DAY).moonEv, ...this.day(d0 + 2 * DAY).moonEv].filter(e => e.t > T);
+    const mEv = [...D.moonEv, ...this.day(D.end).moonEv, ...this.day(this.nextStart(D.end)).moonEv].filter(e => e.t > T);
     const mRise = mEv.find(e => e.up)?.t, mSet = mEv.find(e => !e.up)?.t;
-    const mRose = [...this.day(d0 - DAY).moonEv, ...D.moonEv].filter(e => e.up && e.t <= T).pop()?.t;
+    const mRose = [...this.day(this.dayStart(d0 - 1)).moonEv, ...D.moonEv].filter(e => e.up && e.t <= T).pop()?.t;
     const sunUp = s.alt > -0.833, moonUp = m.alt > -0.833, pct = Math.round(il.f * 100);
     const full = /moon|quarter/.test(name) ? name.toLowerCase().replace('quarter', 'quarter moon') : name.toLowerCase() + ' moon';
 
@@ -215,7 +229,7 @@ class AlmanacSky extends HTMLElement {
     this.plot(D, T, s, m);
 
     // sun
-    const Y = this.day(d0 - DAY), diff = D.len != null && Y.len != null ? D.len - Y.len : null;
+    const Y = this.day(this.dayStart(d0 - 1)), diff = D.len != null && Y.len != null ? D.len - Y.len : null;
     const ds = diff == null ? '—' : `${diff < 0 ? '−' : '+'}${Math.floor(Math.abs(diff) / 6e4)} m ${Math.round(Math.abs(diff) % 6e4 / 1e3)} s`;
     const st = (k, v, x) => `<div><dt>${k}</dt><dd>${v}${x ? ` <small>${x}</small>` : ''}</dd></div>`;
     const deg = v => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}°`;
@@ -246,15 +260,15 @@ ${dot(s, sunUp, 'var(--sun)', 6)}${dot(m, moonUp, 'var(--moon)', 5)}</svg>
     const W = this.W; if (!W) return;
     const fit = getComputedStyle(this.shadowRoot.getElementById('plot')).position === 'absolute', H = fit ? Math.max(130, this.Hc || 0) : W < 600 ? 220 : 270, top = 22, bot = H - 24, d0 = D.d0;
     const max = Math.max(20, ...D.sa, ...D.ma) + 8, min = -max * 0.55;
-    const x = t => (t - d0) / DAY * W, y = a => top + (max - Math.max(min, Math.min(max, a))) / (max - min) * (bot - top), y0 = y(0);
-    const path = a => { let d = ''; for (let i = 0; i < a.length; i += 5) d += `${i ? 'L' : 'M'}${x(D.t[i]).toFixed(1)},${(top + (max - a[i]) / (max - min) * (bot - top)).toFixed(1)}`; return d; };
+    const x = t => (t - d0) / (D.end - d0) * W, y = a => top + (max - Math.max(min, Math.min(max, a))) / (max - min) * (bot - top), y0 = y(0);
+    const path = a => { let d = ''; for (let i = 0; i < a.length; i = i === a.length - 1 ? a.length : Math.min(i + 5, a.length - 1)) d += `${i ? 'L' : 'M'}${x(D.t[i]).toFixed(1)},${(top + (max - a[i]) / (max - min) * (bot - top)).toFixed(1)}`; return d; };
     const ps = path(D.sa), pm = path(D.ma);
-    let stops = ''; for (let i = 0; i <= 48; i++) stops += `<stop offset="${(i / 48 * 100).toFixed(2)}%" stop-color="${skyColor(D.sa[i * 15])}"/>`;
+    let stops = ''; for (let i = 0; i <= 48; i++) stops += `<stop offset="${(i / 48 * 100).toFixed(2)}%" stop-color="${skyColor(D.sa[Math.round(i / 48 * (D.sa.length - 1))])}"/>`;
     let ticks = ''; const every = W < 600 ? 6 : 3;
-    for (let h = 0; h <= 24; h += every) { const X = h / 24 * W; ticks += `<path d="M${X},${top}V${bot}" stroke="var(--line)" stroke-dasharray="2 5"/>` + (h < 24 ? `<text x="${X + 5}" y="${H - 7}">${this.fH.format(d0 + h * 36e5)}</text>` : ''); }
+    for (let tick = d0; tick < D.end; tick += every * 36e5) { const X = x(tick); ticks += `<path d="M${X},${top}V${bot}" stroke="var(--line)" stroke-dasharray="2 5"/>` + (`<text x="${X + 5}" y="${H - 7}">${this.fH.format(tick)}</text>`); }
     const lab = (t, yy, col, txt) => { if (!t) return ''; const X = x(t), end = X > W - 70, start = X < 70; return `<circle cx="${X.toFixed(1)}" cy="${y0}" r="3.5" fill="${col}" stroke="var(--bg2)" stroke-width="1.5"/><text x="${(X + (end ? -6 : start ? 6 : 0)).toFixed(1)}" y="${yy}" text-anchor="${end ? 'end' : start ? 'start' : 'middle'}" style="fill:${col}">${txt}</text>`; };
     const mev = D.moonEv.map(e => lab(e.t, y0 + 34, 'var(--moon)', `${e.up ? '↑' : '↓'} ${this.tm(e.t)}`)).join('');
-    const X = x(Math.min(d0 + DAY, Math.max(d0, T))), end = X > W - 60, start = X < 60;
+    const X = x(Math.min(D.end, Math.max(d0, T))), end = X > W - 60, start = X < 60;
     this.shadowRoot.getElementById('plot').innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
 <defs><linearGradient id="ribbon">${stops}</linearGradient><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient><mask id="fm"><rect width="${W}" height="${y0}" fill="url(#fade)"/></mask>
 <clipPath id="up"><rect width="${W}" height="${y0}"/></clipPath><clipPath id="dn"><rect y="${y0}" width="${W}" height="${bot - y0}"/></clipPath></defs>
@@ -276,10 +290,10 @@ ${lab(D.rise, y0 + 19, 'var(--sun)', `↑ ${this.tm(D.rise)}`)}${lab(D.set, y0 +
       prev = p;
     }
     const keyDays = new Map(ev.map(e => [this.dayStart(e.t), e.q]));
-    const when = t => { const n = Math.round((this.dayStart(t) - d0) / DAY); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`; };
+    const when = t => { const n = (this.civilDate(t) - this.civilDate(d0)) / DAY; return n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`; };
     const list = ev.map(e => `<li>${moonSvg(22, [0, 0.5, 1, 0.5][e.q], e.q === 3 ? 180 : 0)}<span>${NAMES[e.q * 2]}</span><small>${this.fS.format(e.t)} · ${when(e.t)}</small></li>`).join('');
     let cal = '';
-    for (let i = 0; i < 28; i++) { const d = d0 + i * DAY, il = illum(d + DAY / 2), n = this.fN.format(d + DAY / 2); cal += `<div class="${i ? '' : 't'}${keyDays.has(d) ? ' k' : ''}" title="${this.fS.format(d + DAY / 2)}: ${phaseName(il.phase)}, ${Math.round(il.f * 100)}% lit">${moonSvg(24, il.f, il.phase < 0.5 ? 0 : 180)}<span>${n === '1' ? this.fM.format(d + DAY / 2) : n}</span></div>`; }
+    for (let i = 0, d = d0; i < 28; i++) { const end = this.nextStart(d), middle = (d + end) / 2, il = illum(middle), n = this.fN.format(middle); cal += `<div class="${i ? '' : 't'}${keyDays.has(d) ? ' k' : ''}" title="${this.fS.format(middle)}: ${phaseName(il.phase)}, ${Math.round(il.f * 100)}% lit">${moonSvg(24, il.f, il.phase < 0.5 ? 0 : 180)}<span>${n === '1' ? this.fM.format(middle) : n}</span></div>`; d = end; }
     this.shadowRoot.getElementById('cycle').innerHTML = `<p class="lab">The next four weeks</p><ul class="next">${list}</ul><div class="cal">${cal}</div>`;
   }
 }
