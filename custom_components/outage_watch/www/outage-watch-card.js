@@ -90,6 +90,14 @@ const THEMES = {
 };
 const THEME_KEY = "outage-watch.theme";
 const MOBILE_LAYOUT_KEY = "outage-watch.mobile-layout";
+const SERVER_INFO_KEY = "outage-watch.server-info";
+const SERVER_SENSORS = [
+  ["cpu", "CPU", "sensor.system_monitor_processor_use", "%"],
+  ["memory", "Memory", "sensor.system_monitor_memory_usage", "%"],
+  ["disk", "Disk used", "sensor.system_monitor_disk_usage", "%"],
+  ["disk_free", "Disk free", "sensor.system_monitor_disk_free", ""],
+  ["temperature", "CPU temperature", "sensor.system_monitor_processor_temperature", ""],
+];
 const serviceCategory = (service) => service.category || "Custom";
 const validTheme = (value) => Object.hasOwn(THEMES, value);
 
@@ -100,10 +108,12 @@ class OutageWatchCard extends HTMLElement {
     this.attachShadow({mode: "open"});
     this.theme = "steel";
     this.mobileLayout = "single";
+    this.showServerInfo = false;
     try {
       const saved = localStorage.getItem(THEME_KEY);
       if (validTheme(saved)) this.theme = saved;
       if (localStorage.getItem(MOBILE_LAYOUT_KEY) === "double") this.mobileLayout = "double";
+      this.showServerInfo = localStorage.getItem(SERVER_INFO_KEY) === "true";
     } catch { /* Theme selection still works without storage. */ }
     this.shadowRoot.addEventListener("change", (event) => {
       if (event.target.id === "catalog-category") this.filterCatalog();
@@ -277,6 +287,14 @@ class OutageWatchCard extends HTMLElement {
     }
     if (action === "close-themes") return this.shadowRoot.querySelector("dialog").close();
     if (action === "choose-theme") return this.chooseTheme(id);
+    if (action === "server-info") {
+      this.showServerInfo = !this.showServerInfo;
+      try { localStorage.setItem(SERVER_INFO_KEY, String(this.showServerInfo)); } catch { /* In-memory choice. */ }
+      button.setAttribute("aria-pressed", String(this.showServerInfo));
+      button.textContent = this.showServerInfo ? "Hide server info" : "Show server info";
+      this.shadowRoot.querySelector(".server-info").hidden = !this.showServerInfo;
+      return;
+    }
     if (action === "filter-services") {
       this.serviceFilter = id;
       this.render();
@@ -326,6 +344,33 @@ class OutageWatchCard extends HTMLElement {
       if (!element.hidden) matches += 1;
     }
     this.shadowRoot.querySelector(".catalog-empty").hidden = matches > 0;
+  }
+
+  serverInfo() {
+    const states = this._hass?.states || {};
+    const config = this.config?.server_info_entities || {};
+    const metrics = SERVER_SENSORS.flatMap(([key, label, fallback, unit]) => {
+      const sensor = states[config[key] || fallback];
+      const value = numeric(sensor?.state);
+      if (value === null) return [];
+      const displayUnit = sensor.attributes?.unit_of_measurement || unit;
+      return [[label, value.toLocaleString(undefined, {maximumFractionDigits:1}) +
+        (displayUnit === "%" ? "%" : displayUnit ? " " + displayUnit : "")]];
+    });
+    const boot = Date.parse(states[config.uptime || "sensor.system_monitor_uptime"]?.state);
+    if (Number.isFinite(boot) && boot <= Date.now()) {
+      const hours = Math.floor((Date.now() - boot) / 3600000);
+      const days = Math.floor(hours / 24);
+      const uptime = hours < 1 ? "<1h" : days ? `${days}d ${hours % 24}h` : `${hours}h`;
+      metrics.push(["Host uptime", uptime]);
+    }
+    const hasHostMetrics = metrics.length > 0;
+    if (this._hass?.config?.version) metrics.push(["Home Assistant", this._hass.config.version]);
+    return `<section class="server-info" aria-label="Home Assistant server info" ${this.showServerInfo ? "" : "hidden"}>
+      <h2>Server info</h2>
+      <dl>${metrics.map(([label,value]) => `<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join("")}</dl>
+      ${hasHostMetrics ? "" : '<p class="muted">Host metrics appear when System Monitor sensors are enabled.</p>'}
+    </section>`;
   }
 
   render() {
@@ -396,6 +441,16 @@ class OutageWatchCard extends HTMLElement {
         color:#e2eeff;font-weight:700;background:linear-gradient(#3b5a80,#1a2d49);
         box-shadow:inset 0 0 0 2px #1c293e,0 0 15px #579bfd45,0 4px 7px #000b;
       }
+      .server-info {
+        display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;margin:0 0 9px;padding:6px 9px;
+        background:var(--theme-raised,#1b1e21);border:1px solid var(--line);border-radius:8px;
+      }
+      .server-info h2 {font-size:12px}
+      .server-info dl {display:flex;flex-wrap:wrap;gap:5px 12px;margin:0}
+      .server-info dl div {display:flex;gap:4px;font-size:11px}
+      .server-info dt {color:var(--muted)}
+      .server-info dd {margin:0;font-weight:700;font-variant-numeric:tabular-nums}
+      .server-info p {font-size:11px}
       .service-filters {
         display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px;
       }
@@ -712,6 +767,11 @@ class OutageWatchCard extends HTMLElement {
             `<button type="button" data-action="mobile-layout" data-id="${id}" aria-pressed="${this.mobileLayout === id}">${name}</button>`).join("")}
           <p class="muted">Applies on narrow screens and is saved in this browser.</p>
         </fieldset>
+        <fieldset class="layout-options">
+          <legend>Server info</legend>
+          <button type="button" data-action="server-info" aria-pressed="${this.showServerInfo}">${this.showServerInfo ? "Hide server info" : "Show server info"}</button>
+          <p class="muted">Show host metrics from your existing Home Assistant sensors.</p>
+        </fieldset>
       </dialog>
       <header><div><h1>Outage Map</h1><p>Your services, at a glance.</p></div><div class="header-controls">${connection}${this.speedHeader()}<button type="button" class="theme-open" data-action="themes" aria-haspopup="dialog">Theme</button>${can_manage ? '<button class="primary" data-action="add">+ Add service</button>' : ""}</div></header>
       ${this.loadError ? `<p class="notice" role="status">${escape(this.loadError)}</p>` : ""}
@@ -728,6 +788,7 @@ class OutageWatchCard extends HTMLElement {
         <div class="catalog">${catalog.filter((item) => !services.some((service) => service.id === item.id)).map((item) => `<button data-search="${escape(item.name)}" data-category="${escape(item.category)}" data-action="track" data-id="${escape(item.id)}">${escape(item.name)}</button>`).join("")}</div>
         <p class="muted catalog-empty" hidden>No matching catalog services.</p>
         <form><input name="name" aria-label="Service name" placeholder="Service name" maxlength="80" required><input name="url" type="url" aria-label="Public HTTP URL" placeholder="https://example.com" required><button class="primary">Track URL</button></form></section>` : ""}
+      ${this.serverInfo()}
       ${trackedCategories.length > 0 ? `<div class="service-filters" role="group" aria-label="Filter tracked services">
         ${filters.map((name) => `<button type="button" data-action="filter-services" data-id="${escape(name)}"
           aria-pressed="${name === activeFilter}">${escape(name)}</button>`).join("")}

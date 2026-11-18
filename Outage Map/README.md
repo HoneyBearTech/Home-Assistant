@@ -20,7 +20,7 @@ The integration doesn't create a sidebar dashboard automatically. If the card is
 type: custom:outage-watch-card
 ```
 
-If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.3` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
+If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.4` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
 
 ## Install for beta testing
 
@@ -83,3 +83,9 @@ Use **Theme** to pick a style or follow the current Appearance palette. The sele
 If the Speedtest.net integration exposes `sensor.speedtest_download`, `sensor.speedtest_upload`, and `sensor.speedtest_ping`, the header shows the available readings. Home Assistant History supplies the 24-hour chart. Administrators can run a test from the header. Custom entity IDs can be set with `speedtest_download_entity`, `speedtest_upload_entity`, and `speedtest_ping_entity` in the card config.
 
 Please report reproducible beta issues on [GitHub](https://github.com/yanke7/Home-Assistant/issues). Include your Home Assistant version and the relevant error or steps to reproduce. Remove tokens, addresses, and personal data from logs or screenshots.
+
+## Optional server info
+
+Open **Theme → Server info → Show server info**. This is off by default and is saved per browser. The panel shows Home Assistant's version and the available CPU, memory, disk, temperature, and host uptime readings from [System Monitor](https://www.home-assistant.io/integrations/systemmonitor/). Enable only the System Monitor sensors you want to display. No extra checks run when the panel is open.
+
+For renamed or alternative sensors, add a `server_info_entities` mapping to the card YAML. Supported keys are `cpu`, `memory`, `disk`, `disk_free`, `temperature`, and `uptime`. CPU, memory, and disk usage should be percentage sensors. Host uptime expects a timestamp for the host's last boot. The disk sensors display the mount point selected in System Monitor.
