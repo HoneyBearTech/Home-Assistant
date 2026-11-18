@@ -20,7 +20,7 @@ The integration doesn't create a sidebar dashboard automatically. If the card is
 type: custom:outage-watch-card
 ```
 
-If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.2` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
+If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.3` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
 
 ## Install for beta testing
 
@@ -59,6 +59,8 @@ Choose **Theme → Mobile layout** to switch. **One column** is the default. Bot
 | [![One column on mobile](docs/screenshots/mobile-one-column.jpg)](docs/screenshots/mobile-one-column.jpg) | [![Two columns on mobile](docs/screenshots/mobile-two-columns.jpg)](docs/screenshots/mobile-two-columns.jpg) |
 
 ## Catalog coverage
+
+Use the category buttons above the dashboard tiles to focus on one group of tracked services. **All** restores the full list. The overall status counts and outage banners continue to cover every tracked service.
 
 Use **+ Add service** and filter by **Video**, **Audio**, **Smart home**, **Weather**, or **Online services**. Catalog entries only start polling when you choose to track them. See the [endpoint verification results](docs/catalog-expansion.md) for the expanded catalog and its signal types.
 

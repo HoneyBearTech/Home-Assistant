@@ -90,6 +90,7 @@ const THEMES = {
 };
 const THEME_KEY = "outage-watch.theme";
 const MOBILE_LAYOUT_KEY = "outage-watch.mobile-layout";
+const serviceCategory = (service) => service.category || "Custom";
 const validTheme = (value) => Object.hasOwn(THEMES, value);
 
 class OutageWatchCard extends HTMLElement {
@@ -276,6 +277,12 @@ class OutageWatchCard extends HTMLElement {
     }
     if (action === "close-themes") return this.shadowRoot.querySelector("dialog").close();
     if (action === "choose-theme") return this.chooseTheme(id);
+    if (action === "filter-services") {
+      this.serviceFilter = id;
+      this.render();
+      this.shadowRoot.querySelector('[data-action="filter-services"][aria-pressed="true"]')?.focus();
+      return;
+    }
     if (action === "mobile-layout") {
       if (id !== "single" && id !== "double") return;
       this.mobileLayout = id;
@@ -326,7 +333,13 @@ class OutageWatchCard extends HTMLElement {
     const {services = [], catalog = [], connected, can_manage, notify_configured} = this.data || {};
     const categories = [...new Set(catalog.map((item) => item.category).filter(Boolean))].sort();
     const ordered = [...services].sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
-    const selected = this.selected === undefined ? ordered[0] : services.find((item) => item.id === this.selected);
+    const trackedCategories = [...new Set(ordered.map(serviceCategory))].sort();
+    const filters = ["All", ...trackedCategories];
+    const activeFilter = filters.includes(this.serviceFilter) ? this.serviceFilter : "All";
+    const visible = activeFilter === "All" ? ordered :
+      ordered.filter((item) => serviceCategory(item) === activeFilter);
+    const selected = this.selected === null ? undefined :
+      visible.find((item) => item.id === this.selected) || visible[0];
     this.activeService = selected;
     const incident = ordered.find((item) => item.reason === "provider_outage");
     const counts = [["outage", "Outages"], ["possible_problems", "Possible problems"], ["operational", "Healthy"], ["unknown", "Unknown"]];
@@ -382,6 +395,13 @@ class OutageWatchCard extends HTMLElement {
         padding:11px 18px;border:2px solid #758598;border-radius:999px;
         color:#e2eeff;font-weight:700;background:linear-gradient(#3b5a80,#1a2d49);
         box-shadow:inset 0 0 0 2px #1c293e,0 0 15px #579bfd45,0 4px 7px #000b;
+      }
+      .service-filters {
+        display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px;
+      }
+      .service-filters button {font-size:12px;line-height:1.2;padding:5px 8px}
+      .service-filters button[aria-pressed="true"] {
+        outline:2px solid var(--blue);outline-offset:-2px;
       }
       .summary {display:flex;flex-wrap:wrap;gap:10px;margin:clamp(18px,3cqw,30px) 0 18px}
       .count,.connection {
@@ -708,8 +728,12 @@ class OutageWatchCard extends HTMLElement {
         <div class="catalog">${catalog.filter((item) => !services.some((service) => service.id === item.id)).map((item) => `<button data-search="${escape(item.name)}" data-category="${escape(item.category)}" data-action="track" data-id="${escape(item.id)}">${escape(item.name)}</button>`).join("")}</div>
         <p class="muted catalog-empty" hidden>No matching catalog services.</p>
         <form><input name="name" aria-label="Service name" placeholder="Service name" maxlength="80" required><input name="url" type="url" aria-label="Public HTTP URL" placeholder="https://example.com" required><button class="primary">Track URL</button></form></section>` : ""}
+      ${trackedCategories.length > 0 ? `<div class="service-filters" role="group" aria-label="Filter tracked services">
+        ${filters.map((name) => `<button type="button" data-action="filter-services" data-id="${escape(name)}"
+          aria-pressed="${name === activeFilter}">${escape(name)}</button>`).join("")}
+      </div>` : ""}
       <div class="layout ${selected ? "with-detail" : ""}">
-        <div class="tiles">${ordered.map((item) => `<button class="tile" data-action="select" data-id="${escape(item.id)}" aria-pressed="${selected?.id === item.id}">
+        <div class="tiles">${visible.map((item) => `<button class="tile" data-action="select" data-id="${escape(item.id)}" aria-pressed="${selected?.id === item.id}">
           <strong class="identity" title="${escape(item.name)}">${icons(item.icon || "link-variant")}<span class="service-name">${escape(item.name)}</span></strong>
           <span class="tile-meta"><span class="muted">${escape(item.signal)}${item.feed_scope ? " · " + escape(item.feed_scope) : ""}${item.signal !== "Checks only" && !item.feed_fresh ? " · Feed unavailable" : ""}</span><span class="pill ${escape(item.status)}">${label(item)}</span></span>
           <span class="spark">${graph(item)}<strong>${item.latency == null ? "—" : `${escape(item.latency)} ms`}</strong></span>

@@ -79,7 +79,7 @@ class Monitor:
             connector=aiohttp.TCPConnector(resolver=self.resolver, limit=8),
             timeout=aiohttp.ClientTimeout(total=10),
             cookie_jar=aiohttp.DummyCookieJar(),
-            headers={"User-Agent": "OutageMap/0.2.2 (+https://github.com/yanke7/Home-Assistant)"},
+            headers={"User-Agent": "OutageMap/0.2.3 (+https://github.com/yanke7/Home-Assistant)"},
         )
         self.control_task = asyncio.create_task(self.watch_connection())
         for service in self.services.values():
@@ -169,6 +169,7 @@ class Monitor:
                         if item["id"] not in tracked_catalog],
             "services": [{
                 **{key: service.get(key) for key in ("id", "name", "official", "crowd", "icon", "alerts", "feed_scope")},
+                "category": (self.catalog_item(service) or {}).get("category", "Custom"),
                 **self.state(service),
                 "history": [row for row in service["samples"] if row[0] > time() - DAY],
             } for service in self.services.values()],
