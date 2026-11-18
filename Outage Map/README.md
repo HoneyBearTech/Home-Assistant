@@ -20,7 +20,7 @@ The integration doesn't create a sidebar dashboard automatically. If the card is
 type: custom:outage-watch-card
 ```
 
-If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.5` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
+If it says **Custom element doesn't exist: outage-watch-card** after refreshing, add `/outage_watch/outage-watch-card.js?v=0.2.6` as a **JavaScript module** in **Settings → Dashboards → Resources** (enable **Advanced mode** in your user profile if Resources isn't visible). Reload the dashboard. If the module URL returns 404, check that the integration is loaded and restart Home Assistant once after installation.
 
 ## Install for beta testing
 
@@ -104,3 +104,11 @@ Please report reproducible beta issues on [GitHub](https://github.com/yanke7/Hom
 Open **Theme → Server info → Show server info**. This is off by default and is saved per browser. The panel shows Home Assistant's version and the available CPU, memory, disk, temperature, and host uptime readings from [System Monitor](https://www.home-assistant.io/integrations/systemmonitor/). Enable only the System Monitor sensors you want to display. No extra checks run when the panel is open.
 
 For renamed or alternative sensors, add a `server_info_entities` mapping to the card YAML. Supported keys are `cpu`, `memory`, `disk`, `disk_free`, `temperature`, and `uptime`. CPU, memory, and disk usage should be percentage sensors. Host uptime expects a timestamp for the host's last boot. The disk sensors display the mount point selected in System Monitor.
+
+## History and storage
+
+Outage Map keeps a rolling 24-hour window of up to 1,440 check samples per monitored service for the dashboard. Old samples are dropped as checks are saved. Provider feeds are cached as their latest result.
+
+Home Assistant Recorder can still record outage and recovery states and live response-time sensor changes under its normal retention rules. **Keep long-term latency statistics** is off by default. Enable it under **Settings → Devices & services → Outage Map → Configure** if you want Recorder to generate hourly response-time statistics. Disabling it stops future hourly aggregation and keeps existing data. The dashboard's own 24-hour charts work either way.
+
+The sample cap applies to Outage Map's own store. Recorder is shared with other integrations and is subject to its own purge and repack settings. Speedtest history is recorded separately by Home Assistant.
