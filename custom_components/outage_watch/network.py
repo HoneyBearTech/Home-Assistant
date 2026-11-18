@@ -11,8 +11,12 @@ from yarl import URL
 from .apple import FEED_URL as APPLE_FEED_URL, parse_icloud
 from .google import FEED_URL as GOOGLE_FEED_URL, parse_workspace
 from .statuspage import parse_feed
+from .xai import FEED_URL as XAI_FEED_URL, parse_xai
 
 SUMMARY_ONLY_FEEDS = frozenset({
+    "https://status.openai.com/api/v2/summary.json",
+    "https://status.perplexity.com/api/v2/summary.json",
+    "https://groqstatus.com/api/v2/summary.json",
     "https://status.plex.tv/api/v2/summary.json",
     "https://status.tailscale.com/api/v2/summary.json",
 })
@@ -85,6 +89,8 @@ async def feed_update(session, url, previous):
                     return None
             if url == APPLE_FEED_URL:
                 data = parse_icloud(body)
+            elif url == XAI_FEED_URL:
+                data = parse_xai(body)
             else:
                 payload = json.loads(body)
                 data = (parse_workspace(payload) if url == GOOGLE_FEED_URL else
