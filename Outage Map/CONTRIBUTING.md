@@ -2,7 +2,7 @@
 
 To propose a catalog entry, document what its public check actually covers. Verify that the endpoint answers a normal Home Assistant probe from your network. For provider incidents, prefer an official machine-readable feed and test that closed incidents are ignored. Include a sample response or a representative fixture for a new feed format.
 
-Run the local checks from this directory:
+Run the local checks from the repository root (the directory containing `scripts/` and `tests/`).
 
 ```sh
 python3 scripts/validate_catalog.py
