@@ -1,0 +1,28 @@
+name: Mac bridge tests
+
+on:
+  push:
+    paths:
+      - 'Mac Dashboard/mac2mqtt/**'
+      - '.github/workflows/mac-bridge.yml'
+  pull_request:
+    paths:
+      - 'Mac Dashboard/mac2mqtt/**'
+      - '.github/workflows/mac-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'Mac Dashboard/mac2mqtt/go.mod'
+          cache-dependency-path: 'Mac Dashboard/mac2mqtt/go.sum'
+      - name: Run bridge tests
+        working-directory: Mac Dashboard/mac2mqtt
+        run: go test -mod=readonly -count=1 ./...
