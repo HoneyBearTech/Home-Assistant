@@ -41,7 +41,7 @@ class DashboardPermissionTests(unittest.IsolatedAsyncioTestCase):
         instance = monitor.Monitor(hass, SimpleNamespace(entry_id="home", options={}), [])
         instance.control = False
         instance.notify_action = "notify.phone"
-        instance.catalog = {"other": {"id": "other", "name": "Other"}}
+        instance.catalog = {"other": {"id": "other", "name": "Other", "category": "Cloud"}}
         for key in ("first", "hidden", "missing"):
             instance.services[key] = {"id": key, "name": key, "samples": [[monitor.time(), "ok", 42]], "alerts": True}
         hass.config_entries.async_loaded_entries.return_value = [SimpleNamespace(runtime_data=instance)]
@@ -66,7 +66,10 @@ class DashboardPermissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("connected" in result, admin or "binary_sensor.internet" in allowed)
             self.assertEqual("notify_configured" in result, admin)
             self.assertEqual("catalog" in result, admin)
+            if admin:
+                self.assertEqual(result["catalog"][0]["category"], "Cloud")
             for item in result["services"]:
+                self.assertEqual(item["category"], "Custom")
                 self.assertEqual("alerts" in item, admin)
                 self.assertEqual(item["reason"] == "internet_down", "connected" in result)
                 latency_allowed = admin or f"sensor.renamed_{item['id']}_response_time" in allowed
