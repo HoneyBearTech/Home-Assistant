@@ -83,7 +83,7 @@ class Monitor:
             connector=aiohttp.TCPConnector(resolver=self.resolver, limit=8),
             timeout=aiohttp.ClientTimeout(total=10),
             cookie_jar=aiohttp.DummyCookieJar(),
-            headers={"User-Agent": "OutageMap/0.2.0 (+https://github.com/yanke7/Home-Assistant)"},
+            headers={"User-Agent": "OutageMap/0.2.8 (+https://github.com/yanke7/Home-Assistant)"},
         )
         for service in self.services.values():
             self.schedule(service)
@@ -192,10 +192,11 @@ class Monitor:
         }
         return {
             "connected": self.control, "can_manage": admin, "notify_configured": bool(self.notify_action),
-            "catalog": [{key: item[key] for key in ("name", "id")} for item in self.catalog.values()
+            "catalog": [{key: item[key] for key in ("name", "id", "category")} for item in self.catalog.values()
                         if item["id"] not in tracked_catalog],
             "services": [{
                 **{key: service.get(key) for key in ("id", "name", "official", "crowd", "icon", "alerts", "feed_scope")},
+                "category": (self.catalog_item(service) or {}).get("category", "Custom"),
                 **self.state(service),
                 "history": [row for row in service["samples"] if row[0] > time() - DAY],
             } for service in self.services.values()],
