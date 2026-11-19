@@ -1,1 +1,28 @@
-{"config":{"step":{"user":{"title":"Outage Map","description":"Monitor selected services from this Home Assistant instance."}},"abort":{"already_configured":"Outage Map is already configured."}},"options":{"step":{"init":{"title":"Outage Map settings","data":{"scan_interval":"Check interval in seconds","notify_service":"Optional notification action, e.g. notify.mobile_app_phone"}}}}}
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Outage Map",
+        "description": "Monitor selected services from this Home Assistant instance."
+      }
+    },
+    "abort": {
+      "already_configured": "Outage Map is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Outage Map settings",
+        "data": {
+          "scan_interval": "Check interval in seconds",
+          "notify_service": "Optional notification action, e.g. notify.mobile_app_phone",
+          "long_term_latency": "Keep long-term latency statistics"
+        },
+        "data_description": {
+          "long_term_latency": "Off by default. Enable Home Assistant’s hourly response-time statistics. The dashboard’s 24-hour charts work either way."
+        }
+      }
+    }
+  }
+}

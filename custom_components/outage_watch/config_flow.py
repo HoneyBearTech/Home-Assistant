@@ -24,6 +24,7 @@ class OptionsFlow(config_entries.OptionsFlowWithReload):
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
             vol.Required("scan_interval", default=options.get("scan_interval", 300)):
                 vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
+            vol.Required("long_term_latency", default=options.get("long_term_latency", False)): bool,
             vol.Optional("notify_service", default=options.get("notify_service", "")):
                 vol.Match(r"^(?:notify\.[a-z0-9_]+)?$"),
         }))
