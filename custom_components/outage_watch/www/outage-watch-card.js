@@ -518,7 +518,7 @@ class OutageWatchCard extends HTMLElement {
     const incident = ordered.find((item) => item.reason === "provider_outage");
     const counts = [["outage", "Outages"], ["possible_problems", "Possible problems"], ["operational", "Healthy"], ["unknown", "Unknown"]];
     const link = (url, title) => /^https:\/\//i.test(url || "") ? `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${title} ↗</a>` : "";
-    const connection = `<span class="connection"><span class="dot ${connected !== true ? "uncertain" : ""}">●</span>${connected === true ? "Home internet connected" : connected === false ? "Connectivity uncertain" : "Checking connectivity"}</span>`;
+    const connection = `<span class="connection"><span class="dot ${connected !== true ? "uncertain" : ""}">●</span>${connected === true ? "Home internet connected" : connected === false ? "Connectivity uncertain" : !services.length && this.data ? "Connectivity checks paused" : "Checking connectivity"}</span>`;
     this.shadowRoot.innerHTML = `<style>
       :host {
         display:block;
