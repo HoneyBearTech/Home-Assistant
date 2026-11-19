@@ -95,22 +95,27 @@ class YankePulseCard extends HTMLElement {
   this.icon('wx',sky==='night'&&w?.state==='sunny'?'weather-night':wx[1]);
 
   const alarm=this.s(E.alarm),a=alarm?.state;
-  if(bad(alarm)){this.t('alarm','Offline');this.tone('alarm','idle');}
+  const armed={armed_home:'Armed · Stay',armed_away:'Armed · Away',armed_night:'Armed · Night',armed_vacation:'Armed · Vacation',armed_custom_bypass:'Armed · Bypass'};
+  if(bad(alarm)){this.t('alarm','Offline');this.tone('alarm','warn');this.icon('alarm','shield-outline');raise('warn','Alarm status unavailable');}
   else if(a==='triggered'){this.t('alarm','Triggered');this.tone('alarm','bad');this.icon('alarm','shield-alert-outline');raise('bad','Alarm triggered');}
   else if(a==='disarmed'){this.t('alarm','Disarmed');this.tone('alarm','idle');this.icon('alarm','shield-off-outline');}
-  else if(a==='arming'||a==='pending'){this.t('alarm',a==='arming'?'Arming…':'Pending…');this.tone('alarm','warn');this.icon('alarm','shield-outline');}
-  else{this.t('alarm',{armed_home:'Armed · Stay',armed_away:'Armed · Away',armed_night:'Armed · Night'}[a]||'Armed');this.tone('alarm','ok');this.icon('alarm','shield-check-outline');}
+  else if(['arming','pending','disarming'].includes(a)){this.t('alarm',{arming:'Arming…',pending:'Pending…',disarming:'Disarming…'}[a]);this.tone('alarm','warn');this.icon('alarm','shield-outline');raise('warn','Alarm '+a);}
+  else if(Object.hasOwn(armed,a)){this.t('alarm',armed[a]);this.tone('alarm','ok');this.icon('alarm','shield-check-outline');if(a==='armed_custom_bypass')raise('warn','Alarm armed with bypass');}
+  else{this.t('alarm','Unknown');this.tone('alarm','warn');this.icon('alarm','shield-outline');raise('warn','Alarm status unknown');}
 
   const lock=this.s(E.lock),l=lock?.state;
-  if(bad(lock)){this.t('lock','Offline');this.tone('lock','idle');}
+  if(bad(lock)){this.t('lock','Offline');this.tone('lock','warn');this.icon('lock','lock-outline');raise('warn','Lock status unavailable');}
   else if(l==='locked'){this.t('lock','Locked');this.tone('lock','ok');this.icon('lock','lock-outline');}
   else if(l==='jammed'){this.t('lock','Jammed');this.tone('lock','bad');this.icon('lock','lock-alert-outline');raise('bad','Front door lock is jammed');}
   else if(l==='unlocked'||l==='open'){this.t('lock','Unlocked');this.tone('lock','warn');this.icon('lock','lock-open-variant-outline');raise('warn','Front door is unlocked');}
-  else{this.t('lock',l==='locking'?'Locking…':'Unlocking…');this.tone('lock','warn');}
+  else{const moving={locking:'Locking…',unlocking:'Unlocking…',opening:'Opening…'};this.t('lock',Object.hasOwn(moving,l)?moving[l]:'Unknown');this.tone('lock','warn');this.icon('lock','lock-outline');raise('warn',Object.hasOwn(moving,l)?'Front door lock is '+l:'Lock status unknown');}
 
   const open=E.doors.filter(([,id])=>this.s(id)?.state==='on').map(([n])=>n);
-  this.t('doors',open.length?open.length+' open':'All closed');this.tone('doors',open.length?'warn':'ok');this.icon('doors',open.length?'door-open':'door-closed');
+  const missing=E.doors.filter(([,id])=>!['on','off'].includes(this.s(id)?.state)).length;
+  const doorStatus=[open.length&&open.length+' open',missing&&missing+' unknown'].filter(Boolean).join(' · ');
+  this.t('doors',doorStatus||'All closed');this.tone('doors',doorStatus?'warn':'ok');this.icon('doors',open.length?'door-open':missing?'help-circle-outline':'door-closed');
   if(open.length)raise('warn',open.length===1?open[0]+' is open':open.length+' entryways are open');
+  if(missing)raise('warn',missing+(missing===1?' entryway status unknown':' entryway statuses unknown'));
 
   const on=E.lights.filter(id=>this.s(id)?.state==='on').length;
   this.t('lights',on?on+' on':'All off');this.tone('lights',on?'lit':'idle');this.icon('lights',on?'lightbulb-on-outline':'lightbulb-outline');
@@ -119,7 +124,7 @@ class YankePulseCard extends HTMLElement {
   this.t('inside',Number.isFinite(cur)?(Math.round(cur*10)/10)+'°'+(act==='heating'?' · heating':act==='cooling'?' · cooling':''):'–');
   this.tone('inside',act==='heating'?'lit':act==='cooling'?'cool':'idle');
 
-  const calm=a&&a.startsWith('armed')?'Armed and all secure.':on?'All secure. '+on+(on===1?' light is':' lights are')+' on.':'Everything is closed up and quiet.';
+  const calm=Object.hasOwn(armed,a)?'Armed and all secure.':on?'All secure. '+on+(on===1?' light is':' lights are')+' on.':'Everything is closed up and quiet.';
   this.t('headline',issues.length?issues.join(' · '):calm);
   const head=this.shadowRoot.querySelector('.headline');if(head.dataset.tone!==worst)head.dataset.tone=worst;
  }

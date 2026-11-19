@@ -1,6 +1,5 @@
 """Manage independent probes, freshness, history and notification delivery."""
 import asyncio
-from hashlib import sha256
 import logging
 from time import time
 
@@ -10,6 +9,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
 from .network import PublicResolver, feed_update, probe, public_url
+from .polling import next_slot, poll_offset
 from .status import DAY, summarize
 
 LOGGER = logging.getLogger(__name__)
@@ -28,6 +28,8 @@ class Monitor:
         self.store = Store(hass, 1, f"outage_watch.{entry.entry_id}")
         self.services = {}
         self.tasks = {}
+        self.control_task = None
+        self.control_cooldowns = {}
         self.control = None
         self.failures = 0
         self.generation = 0
@@ -54,7 +56,9 @@ class Monitor:
         item = self.catalog_item(service)
         if item:
             if item.get("feed") != service.get("feed"):
+                service.pop("feed", None)
                 service.pop("provider", None)
+                service.pop("feed_retry_at", None)
             for field in ("feed", "official", "crowd", "feed_scope", "icon"):
                 if item.get(field):
                     service[field] = item[field]
@@ -79,29 +83,35 @@ class Monitor:
             connector=aiohttp.TCPConnector(resolver=self.resolver, limit=8),
             timeout=aiohttp.ClientTimeout(total=10),
             cookie_jar=aiohttp.DummyCookieJar(),
-            headers={"User-Agent": "OutageMap/0.2.0 (+https://github.com/yanke7/Home-Assistant)"},
+            headers={"User-Agent": "OutageMap/0.2.8 (+https://github.com/yanke7/Home-Assistant)"},
         )
-        self.control_task = asyncio.create_task(self.watch_connection())
         for service in self.services.values():
-            seed = int.from_bytes(sha256(service["id"].encode()).digest()[:4])
-            delay = 0 if service.get("feed") and not service.get("provider") else seed % min(30, self.interval)
-            self.schedule(service, delay)
+            self.schedule(service)
 
-    def schedule(self, service, delay):
-        self.tasks[service["id"]] = asyncio.create_task(self.watch(service, delay))
+    def schedule(self, service):
+        if self.control_task is None:
+            self.control_task = asyncio.create_task(self.watch_connection())
+        self.tasks[service["id"]] = asyncio.create_task(self.watch(service))
 
     def add(self, service):
         self.apply_catalog_metadata(service)
         service.update(samples=[], run_start=time())
         self.services[service["id"]] = service
         async_dispatcher_send(self.hass, self.added, service["id"])
-        self.schedule(service, 0)
+        self.schedule(service)
 
     async def remove(self, service_id):
         task = self.tasks.pop(service_id)
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
         self.services.pop(service_id)
+        tasks = [task]
+        if not self.services and self.control_task is not None:
+            tasks.append(self.control_task)
+            self.control_task = None
+            self.control = None
+            self.failures = 0
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         registry = er.async_get(self.hass)
         for domain, kind in (("sensor", "status"), ("sensor", "response_time"), ("binary_sensor", "problem")):
             entity_id = registry.async_get_entity_id(domain, "outage_watch", self.unique(service_id, kind))
@@ -113,7 +123,9 @@ class Monitor:
         return f"{self.entry.entry_id}_{service_id}_{kind}"
 
     async def close(self):
-        tasks = [*self.tasks.values(), self.control_task]
+        tasks = list(self.tasks.values())
+        if self.control_task is not None:
+            tasks.append(self.control_task)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -122,17 +134,32 @@ class Monitor:
         await self.store.async_save({"services": self.services})
 
     async def watch_connection(self):
+        offset = poll_offset(self.entry.entry_id, "connectivity", 30)
+        now = time()
+        await asyncio.sleep(next_slot(now, 30, offset) - now)
         while True:
-            checks = await asyncio.gather(*(probe(self.session, url) for url in CONTROLS))
-            reachable = any(outcome == "ok" for outcome, _, _ in checks)
-            self.failures = 0 if reachable else self.failures + 1
+            reachable = False
+            attempted = False
+            for url in CONTROLS:
+                if time() < self.control_cooldowns.get(url, 0):
+                    continue
+                attempted = True
+                outcome, _, _, self.control_cooldowns[url] = await probe(self.session, url)
+                if outcome == "ok":
+                    reachable = True
+                    break
+            resumed = reachable and self.failures > 0
+            if attempted:
+                self.failures = 0 if reachable else self.failures + 1
             previous = self.control
             if reachable:
                 self.control = True
             elif self.failures >= 2:
                 self.control = False
-            if self.control != previous:
+            # A single failed round pauses service checks without declaring an outage.
+            if resumed or self.control != previous:
                 self.generation += 1
+            if self.control != previous:
                 for service in self.services.values():
                     service["run_start"] = time()
                 async_dispatcher_send(self.hass, self.change)
@@ -165,47 +192,55 @@ class Monitor:
         }
         return {
             "connected": self.control, "can_manage": admin, "notify_configured": bool(self.notify_action),
-            "catalog": [{key: item[key] for key in ("name", "id")} for item in self.catalog.values()
+            "catalog": [{key: item[key] for key in ("name", "id", "category")} for item in self.catalog.values()
                         if item["id"] not in tracked_catalog],
             "services": [{
                 **{key: service.get(key) for key in ("id", "name", "official", "crowd", "icon", "alerts", "feed_scope")},
+                "category": (self.catalog_item(service) or {}).get("category", "Custom"),
                 **self.state(service),
                 "history": [row for row in service["samples"] if row[0] > time() - DAY],
             } for service in self.services.values()],
         }
 
-    async def watch(self, service, delay):
-        await asyncio.sleep(delay)
+    async def watch(self, service):
+        offset = poll_offset(self.entry.entry_id, service["id"], self.interval)
         feed_due = check_due = 0
-        backoff = 1
-        generation = self.generation
+        feed_backoff = check_backoff = 1
+        generation = None
         while True:
             now = time()
             if generation != self.generation:
-                check_due = feed_due = 0
-                backoff = 1
+                # Rephase after reconnect without shortening an existing wait.
+                feed_due = max(feed_due, next_slot(now, self.interval, offset,
+                                                   retry_at=service.get("feed_retry_at", 0)))
+                check_due = max(check_due, next_slot(now, self.interval, offset,
+                                                     retry_at=service.get("probe_retry_at", 0)))
                 generation = self.generation
             changed = False
             if self.control is True and self.failures == 0:
                 if service.get("feed") and now >= feed_due:
-                    current = await feed_update(self.session, service["feed"], service.get("provider") or {})
+                    current, retry_at = await feed_update(self.session, service["feed"], service.get("provider") or {})
+                    service["feed_retry_at"] = retry_at
+                    feed_backoff = 1 if current else min(4, feed_backoff * 2)
+                    feed_due = next_slot(time(), self.interval, offset, feed_backoff, retry_at)
+                    changed = True
                     if current and generation == self.generation and self.failures == 0:
                         service["provider"] = {**current, "checked": time()}
-                        changed = True
-                    feed_due = time() + self.interval
-                if service.get("url") and now >= check_due:
-                    outcome, latency, code = await probe(self.session, service["url"])
+                if (service.get("url") and now >= check_due
+                        and generation == self.generation and self.failures == 0):
+                    outcome, latency, code, retry_at = await probe(self.session, service["url"])
+                    service["probe_retry_at"] = retry_at
+                    changed = True
                     if generation == self.generation and self.failures == 0:
                         service["samples"].append([time(), outcome, latency])
                         self.prune(service)
-                        changed = True
                         if code == 429:
-                            backoff = 4
+                            check_backoff = 4
                         elif outcome == "failed" and self.state(service)["reason"] == "unreachable":
-                            backoff = min(4, backoff * 2)
+                            check_backoff = min(4, check_backoff * 2)
                         else:
-                            backoff = 1
-                    check_due = time() + self.interval * backoff
+                            check_backoff = 1
+                    check_due = next_slot(time(), self.interval, offset, check_backoff, retry_at)
                 await self.notify(service, self.state(service)["status"])
                 if changed:
                     self.save()

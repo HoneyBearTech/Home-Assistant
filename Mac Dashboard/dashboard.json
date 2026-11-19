@@ -7,7 +7,7 @@
       "type": "panel",
       "cards": [
         {
-          "type": "custom:yanke-mac-studio"
+          "type": "custom:yanke-mac-dashboard"
         }
       ]
     }

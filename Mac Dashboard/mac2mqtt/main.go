@@ -123,28 +123,6 @@ func getCommandOutput(name string, arg ...string) string {
 	return stdoutStr
 }
 
-func getMuteStatus() bool {
-	output := getCommandOutput("/usr/bin/osascript", "-e", "output muted of (get volume settings)")
-
-	b, err := strconv.ParseBool(output)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return b
-}
-
-func getCurrentVolume() int {
-	output := getCommandOutput("/usr/bin/osascript", "-e", "output volume of (get volume settings)")
-
-	i, err := strconv.Atoi(output)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return i
-}
-
 func runCommand(name string, arg ...string) {
 	cmd := exec.Command(name, arg...)
 
@@ -152,17 +130,6 @@ func runCommand(name string, arg ...string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// from 0 to 100
-func setVolume(i int) {
-	runCommand("/usr/bin/osascript", "-e", "set volume output volume "+strconv.Itoa(i))
-}
-
-// true - turn mute on
-// false - turn mute off
-func setMute(b bool) {
-	runCommand("/usr/bin/osascript", "-e", "set volume output muted "+strconv.FormatBool(b))
 }
 
 func runPowerCommand(name string, arg ...string) error {
@@ -213,6 +180,23 @@ func getTopicPrefix() string {
 	return "mac2mqtt/" + hostname
 }
 
+var powerActions = map[string]func() error{
+	"sleep":        commandSleep,
+	"displaysleep": commandDisplaySleep,
+	"displaywake":  commandDisplayWake,
+	"shutdown":     commandShutdown,
+}
+
+func dispatchPowerCommand(msg mqtt.Message, actions map[string]func() error) {
+	command, ok := strings.CutPrefix(msg.Topic(), getTopicPrefix()+"/command/")
+	if !ok {
+		return
+	}
+	if action := actions[command]; action != nil {
+		handlePowerCommand(msg, command, action)
+	}
+}
+
 func handlePowerCommand(msg mqtt.Message, command string, action func() error) {
 	// Subscribing again can replay a retained command from an earlier session.
 	if msg.Retained() || msg.Topic() != getTopicPrefix()+"/command/"+command || string(msg.Payload()) != command {
@@ -231,69 +215,31 @@ func handleMessage(client mqtt.Client, msg mqtt.Message) {
 		}
 	}
 
-	if msg.Topic() == getTopicPrefix()+"/command/volume" {
+	systemAudio.handleAudioCommand(client, msg, runAudioScript)
+	dispatchPowerCommand(msg, powerActions)
+}
 
-		i, err := strconv.Atoi(string(msg.Payload()))
-		if err == nil && i >= 0 && i <= 100 {
+var batteryPercent = regexp.MustCompile(`(^|[[:space:]])([0-9]{1,3})%(;|[[:space:]]|$)`)
 
-			setVolume(i)
+func readBattery() ([]byte, error) {
+	return exec.Command("/usr/bin/pmset", "-g", "batt").Output()
+}
 
-			updateVolume(client)
-			updateMute(client)
-
-		} else {
-			log.Println("Incorrect value")
-		}
-
+func updateBattery(client mqtt.Client, read func() ([]byte, error)) {
+	output, err := read()
+	if err != nil {
+		log.Printf("Could not read battery status: %v", err)
+		return
 	}
-
-	if msg.Topic() == getTopicPrefix()+"/command/mute" {
-
-		b, err := strconv.ParseBool(string(msg.Payload()))
-		if err == nil {
-			setMute(b)
-
-			updateVolume(client)
-			updateMute(client)
-
-		} else {
-			log.Println("Incorrect value")
-		}
-
+	match := batteryPercent.FindSubmatch(output)
+	if match == nil {
+		return // Desktop Macs can report AC power without a battery.
 	}
-
-	handlePowerCommand(msg, "sleep", commandSleep)
-	handlePowerCommand(msg, "displaysleep", commandDisplaySleep)
-	handlePowerCommand(msg, "shutdown", commandShutdown)
-	handlePowerCommand(msg, "displaywake", commandDisplayWake)
-}
-
-func updateVolume(client mqtt.Client) {
-	token := client.Publish(getTopicPrefix()+"/status/volume", 0, false, strconv.Itoa(getCurrentVolume()))
-	token.Wait()
-}
-
-func updateMute(client mqtt.Client) {
-	token := client.Publish(getTopicPrefix()+"/status/mute", 0, false, strconv.FormatBool(getMuteStatus()))
-	token.Wait()
-}
-
-func getBatteryChargePercent() string {
-
-	output := getCommandOutput("/usr/bin/pmset", "-g", "batt")
-
-	// $ /usr/bin/pmset -g batt
-	// Now drawing from 'Battery Power'
-	//  -InternalBattery-0 (id=4653155)        100%; discharging; 20:00 remaining present: true
-
-	r := regexp.MustCompile(`(\d+)%`)
-	percent := r.FindStringSubmatch(output)[1]
-
-	return percent
-}
-
-func updateBattery(client mqtt.Client) {
-	token := client.Publish(getTopicPrefix()+"/status/battery", 0, false, getBatteryChargePercent())
+	percent, _ := strconv.Atoi(string(match[2]))
+	if percent > 100 {
+		return
+	}
+	token := client.Publish(getTopicPrefix()+"/status/battery", 0, false, strconv.Itoa(percent))
 	token.Wait()
 }
 
@@ -317,11 +263,10 @@ func main() {
 		for {
 			select {
 			case _ = <-volumeTicker.C:
-				updateVolume(mqttClient)
-				updateMute(mqttClient)
+				systemAudio.updateAudio(mqttClient, runAudioScript)
 
 			case _ = <-batteryTicker.C:
-				updateBattery(mqttClient)
+				updateBattery(mqttClient, readBattery)
 			}
 		}
 	}()
