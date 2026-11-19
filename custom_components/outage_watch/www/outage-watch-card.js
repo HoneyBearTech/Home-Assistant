@@ -518,7 +518,7 @@ class OutageWatchCard extends HTMLElement {
     const incident = ordered.find((item) => item.reason === "provider_outage");
     const counts = [["outage", "Outages"], ["possible_problems", "Possible problems"], ["operational", "Healthy"], ["unknown", "Unknown"]];
     const link = (url, title) => /^https:\/\//i.test(url || "") ? `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${title} ↗</a>` : "";
-    const connection = `<span class="connection"><span class="dot ${connected !== true ? "uncertain" : ""}">●</span>${connected === true ? "Home internet connected" : connected === false ? "Connectivity uncertain" : !services.length && this.data ? "Connectivity checks paused" : "Checking connectivity"}</span>`;
+    const connection = this.data && !("connected" in this.data) ? "" : `<span class="connection"><span class="dot ${connected !== true ? "uncertain" : ""}">●</span>${connected === true ? "Home internet connected" : connected === false ? "Connectivity uncertain" : !services.length && this.data ? "Connectivity checks paused" : "Checking connectivity"}</span>`;
     this.shadowRoot.innerHTML = `<style>
       :host {
         display:block;
@@ -1000,7 +1000,7 @@ class OutageWatchCard extends HTMLElement {
           <span class="tile-meta"><span class="muted">${escape(item.signal)}${item.feed_scope ? " · " + escape(item.feed_scope) : ""}${item.signal !== "Checks only" && !item.feed_fresh ? " · Feed unavailable" : ""}</span><span class="pill ${escape(item.status)}">${label(item)}</span></span>
           <span class="spark">${graph(item)}<strong>${item.latency == null ? "—" : `${escape(item.latency)} ms`}</strong></span>
           <span class="muted">${item.signal === "Feed only" ? "Feed refreshed" : "Checked"} ${timestamp(item.checked || item.feed_checked)}</span>
-        </button>`).join("") || (this.data ? '<p class="muted">No services tracked yet.</p>' : "")}</div>
+        </button>`).join("") || (this.data ? `<p class="muted">${can_manage ? "No services tracked yet." : "No services available to view."}</p>` : "")}</div>
         ${selected ? `<aside class="detail"><div class="row"><h2 class="identity">${icons(selected.icon || "link-variant")}${escape(selected.name)}</h2><button aria-label="Close details" data-action="close">×</button></div>
           <div><span class="pill ${escape(selected.status)}">${label(selected)}</span><p class="muted">${selected.reason === "unreachable" ? "Home Assistant could not reach this endpoint." : selected.signal === "Checks only" ? "This tile reflects checks from your network." : escape(selected.signal)}</p></div>
           ${selected.incident ? `<p>${escape(selected.incident)}</p>` : ""}

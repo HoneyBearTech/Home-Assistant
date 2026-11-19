@@ -208,22 +208,39 @@ class Monitor:
             **{key: feed.get(key) for key in ("incident", "components", "maintenance")},
         }
 
-    def snapshot(self, admin):
-        tracked_catalog = {
-            item["id"] for service in self.services.values()
-            if (item := self.catalog_item(service))
-        }
-        return {
-            "connected": self.control, "can_manage": admin, "notify_configured": bool(self.notify_action),
-            "catalog": [{key: item[key] for key in ("name", "id", "category")} for item in self.catalog.values()
-                        if item["id"] not in tracked_catalog],
-            "services": [{
-                **{key: service.get(key) for key in ("id", "name", "official", "crowd", "icon", "alerts", "feed_scope")},
-                "category": (self.catalog_item(service) or {}).get("category", "Custom"),
-                **self.state(service),
-                "history": [row for row in service["samples"] if row[0] > time() - DAY],
-            } for service in self.services.values()],
-        }
+    def snapshot(self, admin, can_read):
+        connectivity_visible = admin or can_read("binary_sensor", "internet", "connectivity")
+        services = []
+        for service in self.services.values():
+            service_id = service["id"]
+            if not admin and not can_read("sensor", service_id, "status"):
+                continue
+            item = {key: service.get(key) for key in ("id", "name", "official", "crowd", "icon", "feed_scope")}
+            item["category"] = (self.catalog_item(service) or {}).get("category", "Custom")
+            item.update(self.state(service))
+            if not connectivity_visible and item.get("reason") == "internet_down":
+                item["reason"] = None
+            if admin or can_read("sensor", service_id, "response_time"):
+                item["history"] = [row for row in service["samples"] if row[0] > time() - DAY]
+            else:
+                for key in ("latency", "baseline"):
+                    item.pop(key, None)
+            if admin:
+                item["alerts"] = service.get("alerts")
+            services.append(item)
+
+        result = {"can_manage": admin, "services": services}
+        if connectivity_visible:
+            result["connected"] = self.control
+        if admin:
+            tracked_catalog = {
+                item["id"] for service in self.services.values()
+                if (item := self.catalog_item(service))
+            }
+            result["notify_configured"] = bool(self.notify_action)
+            result["catalog"] = [{key: item[key] for key in ("name", "id", "category")} for item in self.catalog.values()
+                                 if item["id"] not in tracked_catalog]
+        return result
 
     async def watch(self, service):
         offset = poll_offset(self.entry.entry_id, service["id"], self.interval)

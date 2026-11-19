@@ -4,6 +4,8 @@ from pathlib import Path
 from uuid import uuid4
 
 import voluptuous as vol
+from homeassistant.auth.permissions.const import POLICY_READ
+from homeassistant.helpers import entity_registry as er
 from homeassistant.components import frontend, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.exceptions import HomeAssistantError
@@ -26,7 +28,14 @@ async def dashboard(hass, connection, msg):
         connection.send_error(msg["id"], "not_loaded", "Set up Outage Map first")
         return
     monitor = entries[0].runtime_data
-    connection.send_result(msg["id"], monitor.snapshot(connection.user.is_admin))
+    user = connection.user
+    registry = er.async_get(hass)
+
+    def can_read(domain, service_id, kind):
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, monitor.unique(service_id, kind))
+        return bool(entity_id and user.permissions.check_entity(entity_id, POLICY_READ))
+
+    connection.send_result(msg["id"], monitor.snapshot(user.is_admin, can_read))
 
 async def async_setup(hass, config):
     await hass.http.async_register_static_paths([
