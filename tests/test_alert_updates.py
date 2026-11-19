@@ -144,7 +144,7 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
 
             with patch.object(monitor.asyncio, "sleep", sleep), self.assertRaises(StopClock):
                 m.failures = 1  # Connectivity is uncertain; no new probes should refresh the sample.
-                await m.watch(svc, 0)
+                await m.watch(svc)
             self.assertEqual(a.values, ["operational", "unknown"])
             m.publish_state(other)
             self.assertEqual(b.values, ["unknown"])
@@ -154,10 +154,10 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
             async def rounds(_):
                 nonlocal sleeps
                 sleeps += 1
-                if sleeps == 2:
+                if sleeps == 3:  # Initial phase delay, then two failed rounds.
                     raise StopClock
 
-            with (patch.object(monitor, "probe", AsyncMock(return_value=("failed", None, 500))),
+            with (patch.object(monitor, "probe", AsyncMock(return_value=("failed", None, 500, 0))),
                   patch.object(monitor.asyncio, "sleep", rounds), self.assertRaises(StopClock)):
                 await m.watch_connection()
             self.assertEqual(internet.values, [False])
