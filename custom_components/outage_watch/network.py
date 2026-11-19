@@ -10,6 +10,17 @@ from yarl import URL
 
 from .apple import FEED_URL as APPLE_FEED_URL, parse_icloud
 from .google import FEED_URL as GOOGLE_FEED_URL, parse_workspace
+from .polling import retry_deadline
+from .statuspage import parse_feed
+from .xai import FEED_URL as XAI_FEED_URL, parse_xai
+
+SUMMARY_ONLY_FEEDS = frozenset({
+    "https://status.openai.com/api/v2/summary.json",
+    "https://status.perplexity.com/api/v2/summary.json",
+    "https://groqstatus.com/api/v2/summary.json",
+    "https://status.plex.tv/api/v2/summary.json",
+    "https://status.tailscale.com/api/v2/summary.json",
+})
 
 class PublicResolver(AbstractResolver):
     def __init__(self):
@@ -56,49 +67,35 @@ async def probe(session, value):
                         method = "GET"
                         continue
                     if code in (401, 403, 429):
-                        return "blocked", None, code
+                        return "blocked", None, code, retry_deadline(response)
                     if 200 <= code < 300:
-                        return "ok", round((monotonic() - start) * 1000), code
-                    return "failed", None, code
+                        return "ok", round((monotonic() - start) * 1000), code, 0
+                    return "failed", None, code, retry_deadline(response)
     except (aiohttp.ClientError, TimeoutError, ValueError, OSError):
         pass
-    return "failed", None, None
-
-def parse_feed(payload):
-    level = payload["status"]["indicator"]
-    if level not in ("none", "minor", "major", "critical", "maintenance"):
-        raise ValueError("Unrecognized provider status")
-    incidents = payload["incidents"]
-    if not isinstance(incidents, list):
-        raise ValueError("Invalid incident list")
-    incident = incidents[0] if incidents else {}
-    return {
-        "level": "none" if level == "maintenance" else level,
-        "maintenance": level == "maintenance" or any(
-            item.get("status") == "in_progress" for item in payload.get("scheduled_maintenances", [])
-        ),
-        "incident": str(incident.get("name", ""))[:300],
-        "components": [str(item["name"])[:100] for item in incident.get("components", [])][:20],
-    }
+    return "failed", None, None, 0
 
 async def feed_update(session, url, previous):
     headers = {"If-None-Match": previous["etag"]} if previous.get("etag") else {}
     try:
         async with session.get(url, headers=headers, allow_redirects=False) as response:
             if response.status == 304 and previous.get("data"):
-                return previous
+                return previous, 0
             if response.status != 200:
-                return None
+                return None, retry_deadline(response)
             body = bytearray()
             async for chunk in response.content.iter_chunked(16384):
                 body.extend(chunk)
                 if len(body) > 1_000_000:
-                    return None
+                    return None, 0
             if url == APPLE_FEED_URL:
                 data = parse_icloud(body)
+            elif url == XAI_FEED_URL:
+                data = parse_xai(body)
             else:
                 payload = json.loads(body)
-                data = parse_workspace(payload) if url == GOOGLE_FEED_URL else parse_feed(payload)
-            return {"data": data, "etag": response.headers.get("ETag")}
+                data = (parse_workspace(payload) if url == GOOGLE_FEED_URL else
+                        parse_feed(payload, summary_only=url in SUMMARY_ONLY_FEEDS))
+            return {"data": data, "etag": response.headers.get("ETag")}, 0
     except (aiohttp.ClientError, TimeoutError, ValueError, KeyError, TypeError, AttributeError):
-        return None
+        return None, 0
