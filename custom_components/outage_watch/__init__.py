@@ -14,6 +14,7 @@ from .monitor import Monitor
 from .network import public_url
 
 DOMAIN = "outage_watch"
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 WWW = Path(__file__).parent / "www"
 PLATFORMS = ["sensor", "binary_sensor"]
 
@@ -31,7 +32,7 @@ async def async_setup(hass, config):
     await hass.http.async_register_static_paths([
         StaticPathConfig("/outage_watch/outage-watch-card.js", str(WWW / "outage-watch-card.js"), False)
     ])
-    frontend.add_extra_js_url(hass, "/outage_watch/outage-watch-card.js?v=0.2.0")
+    frontend.add_extra_js_url(hass, "/outage_watch/outage-watch-card.js?v=0.2.8")
     websocket_api.async_register_command(hass, dashboard)
 
     async def manage(call):
@@ -71,7 +72,7 @@ async def async_setup(hass, config):
                 else:
                     if data["enabled"] and not monitor.notify_action:
                         raise HomeAssistantError("Configure a notification action in Outage Map options first")
-                    monitor.services[service_id]["alerts"] = data["enabled"]
+                    monitor.set_alerts(monitor.services[service_id], data["enabled"])
             monitor.save()
 
     service_id = vol.Required("service_id")

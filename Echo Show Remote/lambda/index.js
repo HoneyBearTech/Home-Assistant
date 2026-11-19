@@ -3,10 +3,6 @@
 const Alexa = require('ask-sdk-core');
 const remoteDocument = require('./remote.json');
 
-// Paste the webhook URL from Home Assistant here (Settings > Home Assistant Cloud > Webhooks).
-// Treat it like a password: anyone who has it can press buttons on the Apple TV.
-const WEBHOOK_URL = process.env.HA_WEBHOOK_URL || 'PASTE_WEBHOOK_URL_HERE';
-
 // App buttons. "source" must match the app name Home Assistant lists for the Apple TV.
 const APPS = [
   { label: 'Netflix', source: 'Netflix' },
@@ -29,17 +25,39 @@ function isAllowed(type, command) {
   return false;
 }
 
-function sendToHomeAssistant(type, command) {
-  return new Promise((resolve, reject) => {
-    if (!isAllowed(type, command)) return reject(new Error(`Command not allowed: ${type}/${command}`));
-    let url;
+async function webhookUrl() {
+  let value = process.env.HA_WEBHOOK_URL;
+  const table = process.env.DYNAMODB_PERSISTENCE_TABLE_NAME;
+  const region = process.env.DYNAMODB_PERSISTENCE_REGION;
+  if (value === undefined && table && region) {
     try {
-      url = new URL(WEBHOOK_URL);
-    } catch (err) {
-      return reject(new Error('The webhook URL has not been set in index.js'));
+      // The Alexa-hosted Node 16 runtime includes the AWS SDK.
+      const DynamoDB = require('aws-sdk').DynamoDB;
+      const result = await new DynamoDB({ region }).getItem({
+        TableName: table,
+        Key: { id: { S: 'office-remote-config' } },
+        ConsistentRead: true,
+      }).promise();
+      value = result.Item && result.Item.webhookUrl && result.Item.webhookUrl.S;
+    } catch {
+      throw new Error('Could not read the webhook setting from the skill database');
     }
+  }
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && !url.username && !url.password && !url.hash) return url;
+  } catch {
+    // URL parsing errors may include the original credential.
+  }
+  throw new Error('Set a valid HTTPS webhook URL in the skill configuration');
+}
+
+async function sendToHomeAssistant(type, command) {
+  if (!isAllowed(type, command)) throw new Error('Command not allowed');
+  const url = await webhookUrl();
+  return new Promise((resolve, reject) => {
     const body = JSON.stringify({ type, command });
-    const transport = url.protocol === 'http:' ? require('http') : require('https');
+    const transport = require('https');
     const request = transport.request(
       url,
       {
@@ -48,6 +66,7 @@ function sendToHomeAssistant(type, command) {
         timeout: 4000,
       },
       (response) => {
+        response.on('error', reject);
         response.resume();
         response.on('end', () => {
           if (response.statusCode >= 200 && response.statusCode < 300) resolve();
@@ -58,6 +77,8 @@ function sendToHomeAssistant(type, command) {
     request.on('timeout', () => request.destroy(new Error('Home Assistant did not answer in time')));
     request.on('error', reject);
     request.end(body);
+  }).catch(() => {
+    throw new Error('Home Assistant did not complete the command');
   });
 }
 
@@ -174,8 +195,8 @@ const ErrorHandler = {
   canHandle() {
     return true;
   },
-  handle(handlerInput, error) {
-    console.log(`Unhandled error: ${error.stack || error.message}`);
+  handle(handlerInput) {
+    console.log('Unhandled skill error');
     return handlerInput.responseBuilder.speak('Something went wrong with the office remote.').getResponse();
   },
 };
