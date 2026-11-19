@@ -25,7 +25,11 @@
     ["weather","Environment Canada Weather",143,"cloud-outline"],["met","MET Norway API",158,"cloud-outline"],
     ["radio","Radio Browser",192,"music-note"],["translate","Google Translate",136,"magnify"],
   ].map(([id,name,latency,icon], index) => ({
-    id,name,latency,icon, baseline:index < 2 ? 112 : latency, checked:now-60,
+    id,name,latency,icon,
+    category: ["netflix","plex"].includes(id) ? "Video" : ["spotify","radio"].includes(id) ? "Audio" :
+      ["apple","ewelink"].includes(id) ? "Smart home" : ["weather","met"].includes(id) ? "Weather" :
+      id === "example" ? "Custom" : "Online services",
+    baseline:index < 2 ? 112 : latency, checked:now-60,
     status:index === 0 ? "outage" : index === 1 ? "possible_problems" : "operational",
     reason:index === 0 ? "provider_outage" : index === 1 ? "slow" : "ok",
     signal:index < 4 ? "Feed + checks" : "Checks only", feed_fresh:index < 4, feed_checked:index < 4 ? now-120 : null,
