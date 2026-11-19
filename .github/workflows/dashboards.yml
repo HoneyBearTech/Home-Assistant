@@ -5,6 +5,7 @@ on:
     paths: &dashboard_paths
       - 'Astra Dashboard/**'
       - 'Fable Sun Moon/**'
+      - 'Echo Show Remote/**'
       - 'Main Dashboard card/**'
       - 'Network/**'
       - 'Mac Dashboard/**'
@@ -35,7 +36,7 @@ jobs:
         run: |
           shopt -s nullglob
           for dir in "Astra Dashboard" "Fable Sun Moon" "Mac Dashboard" "Main Dashboard card" \
-                     Network "Office set up" Security Themes Weather; do
+                     Network "Office set up" Security Themes Weather "Echo Show Remote"; do
             for script in "$dir"/verify*.cjs; do
               echo "Running $script"
               node "$script"
