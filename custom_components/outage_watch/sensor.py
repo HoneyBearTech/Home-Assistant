@@ -21,6 +21,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entry.async_on_unload(async_dispatcher_connect(hass, monitor.added, add_service_entities))
     async_add_entities([item for key in monitor.services for item in entities(key)])
 
+STATUS_ATTRIBUTES = ("reason", "signal", "incident", "components", "maintenance", "feed_fresh")
+
+
 class Status(WatchEntity, SensorEntity):
     @property
     def native_value(self):
@@ -28,12 +31,17 @@ class Status(WatchEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        return {key: value for key, value in self.info.items() if key != "status"}
+        # Keep changing probe timestamps and measurements in the dashboard store.
+        return {key: value for key, value in self.info.items() if key in STATUS_ATTRIBUTES}
 
 class Latency(WatchEntity, SensorEntity):
     _attr_native_unit_of_measurement = "ms"
     _attr_device_class = SensorDeviceClass.DURATION
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    @property
+    def state_class(self):
+        if self.monitor.entry.options.get("long_term_latency", False):
+            return SensorStateClass.MEASUREMENT
+        return None
 
     @property
     def native_value(self):
