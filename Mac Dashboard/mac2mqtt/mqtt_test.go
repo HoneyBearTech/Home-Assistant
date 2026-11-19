@@ -142,10 +142,10 @@ func TestPowerErrorAllowsNextCommand(t *testing.T) {
 		return nil
 	}
 	msg := powerMessage{topic: getTopicPrefix() + "/command/sleep", payload: "sleep"}
-	handlePowerCommand(msg, "sleep", action)
-	handlePowerCommand(msg, "sleep", action)
+	dispatchPowerCommand(msg, map[string]func() error{"sleep": action})
+	dispatchPowerCommand(msg, map[string]func() error{"sleep": action})
 	msg.retained = true
-	handlePowerCommand(msg, "sleep", action)
+	dispatchPowerCommand(msg, map[string]func() error{"sleep": action})
 	if calls != 2 {
 		t.Fatalf("expected both attempts, got %d", calls)
 	}
@@ -179,14 +179,3 @@ func TestMissingSubackResetsOnlyTimedOutConnection(t *testing.T) {
 		t.Fatal("unexpected reset or stale announcement")
 	}
 }
-
-type powerMessage struct {
-	mqtt.Message
-	topic    string
-	payload  string
-	retained bool
-}
-
-func (m powerMessage) Topic() string   { return m.topic }
-func (m powerMessage) Payload() []byte { return []byte(m.payload) }
-func (m powerMessage) Retained() bool  { return m.retained }
