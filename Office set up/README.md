@@ -21,6 +21,21 @@ A compact Home Assistant dashboard for a Mac workstation, Office Apple TV, two o
 
 No credentials or access tokens are required in these files. The card uses the signed-in Home Assistant session. Do not edit Home Assistant's `.storage` files.
 
+Use `custom:yanke-office-studio` for this dashboard. Keep the Mac bundle at
+`/local/mac-studio.bundle.js` and the Office bundle at
+`/local/office/mac-studio.bundle.js`. Existing single-bundle installations
+can continue using `custom:yanke-mac-studio`. Before adding a second bundle,
+change the existing card type to its dashboard-specific name and refresh the page.
+
+Each card accepts an optional `entities` mapping in its dashboard configuration.
+For example, `"entities": {"volume": "number.desk_mac_volume", "light": "light.desk"}`
+routes volume and room light readings and commands to those entities. Other
+entries keep this dashboard’s defaults. Supported keys are `connection`,
+`battery`, `volume`, `mute`, `wake`, `display`, `sleep`, `shutdown`,
+`officeCameras`, `mirrorStart`, `mirrorStop`, `mirrorResult`, `player`,
+`remote`, `light`, `led`, `temperature`, `black`, `cyan`, `magenta`
+and `yellow`. Include every device you want to change when adapting an installation.
+
 ## Entity mappings and prerequisites
 
 This exports the dashboard's current entity names. Adapt them for another installation:

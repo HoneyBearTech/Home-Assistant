@@ -1,7 +1,8 @@
 """Manage independent probes, freshness, history and notification delivery."""
 import asyncio
 import logging
-from time import time
+from dataclasses import dataclass
+from time import monotonic, time
 
 import aiohttp
 from homeassistant.helpers import entity_registry as er
@@ -14,6 +15,12 @@ from .status import DAY, summarize
 
 LOGGER = logging.getLogger(__name__)
 CONTROLS = ("https://www.cloudflare.com/cdn-cgi/trace", "https://connectivitycheck.gstatic.com/generate_204")
+
+@dataclass
+class DeliveryAttempt:
+    delay: int = 0
+    retry_at: float = 0
+
 
 class Monitor:
     def __init__(self, hass, entry, catalog):
@@ -28,6 +35,8 @@ class Monitor:
         self.store = Store(hass, 1, f"outage_watch.{entry.entry_id}")
         self.services = {}
         self.tasks = {}
+        self.entity_states = {}
+        self.pending_alerts = {}
         self.control_task = None
         self.control_cooldowns = {}
         self.control = None
@@ -74,6 +83,17 @@ class Monitor:
     def change(self):
         return f"outage_watch_{self.entry.entry_id}_change"
 
+    def service_change(self, service_id):
+        return f"{self.change}_{service_id}"
+
+    def publish_state(self, service):
+        state = self.state(service)
+        key = service["id"]
+        if state != self.entity_states.get(key):
+            self.entity_states[key] = state
+            async_dispatcher_send(self.hass, self.service_change(key))
+        return state
+
     @property
     def added(self):
         return f"outage_watch_{self.entry.entry_id}_added"
@@ -89,6 +109,7 @@ class Monitor:
             self.schedule(service)
 
     def schedule(self, service):
+        self.entity_states[service["id"]] = self.state(service)
         if self.control_task is None:
             self.control_task = asyncio.create_task(self.watch_connection())
         self.tasks[service["id"]] = asyncio.create_task(self.watch(service))
@@ -103,6 +124,8 @@ class Monitor:
     async def remove(self, service_id):
         task = self.tasks.pop(service_id)
         self.services.pop(service_id)
+        self.entity_states.pop(service_id, None)
+        self.pending_alerts.pop(service_id, None)
         tasks = [task]
         if not self.services and self.control_task is not None:
             tasks.append(self.control_task)
@@ -117,7 +140,6 @@ class Monitor:
             entity_id = registry.async_get_entity_id(domain, "outage_watch", self.unique(service_id, kind))
             if entity_id:
                 registry.async_remove(entity_id)
-        async_dispatcher_send(self.hass, self.change)
 
     def unique(self, service_id, kind):
         return f"{self.entry.entry_id}_{service_id}_{kind}"
@@ -162,6 +184,7 @@ class Monitor:
             if self.control != previous:
                 for service in self.services.values():
                     service["run_start"] = time()
+                    self.publish_state(service)
                 async_dispatcher_send(self.hass, self.change)
             await asyncio.sleep(30)
 
@@ -258,32 +281,53 @@ class Monitor:
                         else:
                             check_backoff = 1
                     check_due = next_slot(time(), self.interval, offset, check_backoff, retry_at)
-                await self.notify(service, self.state(service)["status"])
                 if changed:
                     self.save()
-            async_dispatcher_send(self.hass, self.change)
+            state = self.publish_state(service)
+            await self.notify(service, state["status"])
             deadlines = [due for due in (feed_due, check_due) if due > time()]
             await asyncio.sleep(min(15, max(1, min(deadlines, default=time() + 5) - time())))
+
+    def set_alerts(self, service, enabled):
+        if enabled != service.get("alerts", False):
+            self.pending_alerts.pop(service["id"], None)
+            service.pop("alert_open", None)
+            service["alerts"] = enabled
 
     async def notify(self, service, status):
         if not (service.get("alerts") and self.notify_action and self.control and self.failures == 0):
             return
+        key = service["id"]
         prior = service.get("alert_open", False)
-        if not ((status == "outage" and not prior) or (status == "operational" and prior)):
+        if status not in ("outage", "operational"):
+            return
+        if (status == "outage") == prior:
+            # A failed opening (or recovery) delivery has been overtaken by events.
+            self.pending_alerts.pop(key, None)
+            return
+        attempt = self.pending_alerts.get(key)
+        if attempt is None:
+            attempt = self.pending_alerts[key] = DeliveryAttempt()
+        if monotonic() < attempt.retry_at:
             return
         action = self.notify_action.split(".", 1)[1]
-        if not self.hass.services.has_service("notify", action):
-            return
         label = "recovered" if prior else (
             "is unreachable from Home Assistant" if self.state(service)["reason"] == "unreachable"
             else "has a provider-reported outage"
         )
-        try:
-            await self.hass.services.async_call("notify", action, {
-                "title": "Outage Map", "message": f"{service['name']} {label}."
-            }, blocking=True)
-        except Exception:
-            LOGGER.exception("Could not deliver Outage Map notification")
-        else:
-            service["alert_open"] = not prior
-            self.save()
+        if self.hass.services.has_service("notify", action):
+            try:
+                await self.hass.services.async_call("notify", action, {
+                    "title": "Outage Map", "message": f"{service['name']} {label}."
+                }, blocking=True)
+            except Exception:
+                LOGGER.exception("Could not deliver Outage Map notification")
+            else:
+                # Disabling alerts or removing the service invalidates an in-flight attempt.
+                if self.pending_alerts.get(key) is attempt:
+                    self.pending_alerts.pop(key)
+                    service["alert_open"] = status == "outage"
+                    self.save()
+                return
+        attempt.delay = min(900, max(30, 2 * attempt.delay))
+        attempt.retry_at = monotonic() + attempt.delay
