@@ -72,7 +72,7 @@ async def async_setup(hass, config):
                 else:
                     if data["enabled"] and not monitor.notify_action:
                         raise HomeAssistantError("Configure a notification action in Outage Map options first")
-                    monitor.services[service_id]["alerts"] = data["enabled"]
+                    monitor.set_alerts(monitor.services[service_id], data["enabled"])
             monitor.save()
 
     service_id = vol.Required("service_id")
